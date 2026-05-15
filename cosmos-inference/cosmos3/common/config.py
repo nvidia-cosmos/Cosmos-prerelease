@@ -106,8 +106,10 @@ def unstructure_config(config: Any, *, invalid: _InvalidMode = "error") -> dict:
     return _unstructure(config, prefix=(), options=options)
 
 
-def structure_config(config_dict: Any, target: type | str, /, *, invalid: _InvalidMode = "error") -> Any:
+def structure_config(config_dict: Any, target: type | str | None = None, /, *, invalid: _InvalidMode = "error") -> Any:
     """Structure config from primitive types."""
+    if target is None:
+        target = config_dict[_TYPE_KEY]
     if isinstance(target, str):
         target = locate(target)
     config_dict = fix_config_dict(config_dict, invalid=invalid, add_defaults=True)
@@ -149,7 +151,9 @@ def deserialize_config_dict(config_file: Path) -> dict:
     return config_dict
 
 
-def deserialize_config(config_file: Path, target: type | str, /, *, invalid: _InvalidMode = "error") -> Any:
+def deserialize_config(
+    config_file: Path, target: type | str | None = None, /, *, invalid: _InvalidMode = "error"
+) -> Any:
     """Deserialize config from a file."""
     config_dict = deserialize_config_dict(config_file)
     return structure_config(config_dict, target, invalid=invalid)
@@ -171,12 +175,8 @@ def fix_config_dict(config_dict: Any, *, invalid: _InvalidMode = "error", add_de
     )
 
 
-TYPE_KEY = "_type"
-TARGET_KEY = "_target_"
-
-# For backward compatibility.
-_TYPE_KEY = TYPE_KEY
-_TARGET_KEY = TARGET_KEY
+_TYPE_KEY = "_type"
+_TARGET_KEY = "_target_"
 
 
 def _join_prefix(prefix: tuple[Any, ...]) -> str:

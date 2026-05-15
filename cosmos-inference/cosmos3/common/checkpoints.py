@@ -16,6 +16,9 @@
 import functools
 from uuid import uuid4
 
+import pydantic
+
+from cosmos3.flags import EARLY_ACCESS
 from cosmos3._src.imaginaire.flags import TRAINING
 from cosmos3._src.imaginaire.utils.checkpoint_db import (
     CheckpointConfig,
@@ -23,6 +26,7 @@ from cosmos3._src.imaginaire.utils.checkpoint_db import (
     CheckpointDirS3,
     CheckpointFileHf,
     CheckpointFileS3,
+    RepositoryType,
     register_checkpoint,
 )
 
@@ -80,3 +84,56 @@ def register_checkpoints():
             ),
         ),
     )
+
+
+class DatasetConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
+
+    hf: CheckpointDirHf
+    """Config for dataset on Hugging Face."""
+
+
+_DATASETS_EXPERIMENTAL = {
+    "nvidia/bridge-v2-subset-synthetic-captions": DatasetConfig(
+        hf=CheckpointDirHf(
+            repository_type=RepositoryType.DATASET,
+            repository="nvidia/bridge-v2-subset-synthetic-captions",
+            revision="46468e12ac0dd36901e9e3240d4fc7620942b5d7",
+        ),
+    ),
+    "nvidia/LIBERO_LeRobot_v3": DatasetConfig(
+        hf=CheckpointDirHf(
+            repository_type=RepositoryType.DATASET,
+            repository="nvidia/LIBERO_LeRobot_v3",
+            revision="ddc1edeb6e51e2b7d4d2ba7a1433daaecd37aa64",
+        ),
+    ),
+    "nvidia/bridge_lerobot_v3": DatasetConfig(
+        hf=CheckpointDirHf(
+            repository_type=RepositoryType.DATASET,
+            repository="nvidia/bridge_lerobot_v3",
+            revision="b887e193b141f2fe5b6e3d567577aa51c475693b",
+        ),
+    ),
+}
+
+_DATASETS_EA = {}
+for name in [
+    "nvidia/bridge-v2-subset-synthetic-captions",
+    "nvidia/LIBERO_LeRobot_v3",
+    "nvidia/bridge_lerobot_v3",
+]:
+    dataset = _DATASETS_EXPERIMENTAL[name]
+    _DATASETS_EA[name] = dataset.model_copy(
+        update=dict(
+            hf=dataset.hf.model_copy(
+                update=dict(
+                    repository=name.replace("nvidia/", "nvidia-cosmos-ea/"),
+                )
+            ),
+        )
+    )
+
+DATASETS = _DATASETS_EXPERIMENTAL.copy()
+if EARLY_ACCESS:
+    DATASETS.update(_DATASETS_EA)

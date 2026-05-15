@@ -13,6 +13,10 @@
           "title": "Repository",
           "type": "string"
         },
+        "repository_type": {
+          "$ref": "#/$defs/RepositoryType",
+          "default": "model"
+        },
         "revision": {
           "title": "Revision",
           "type": "string"
@@ -633,6 +637,15 @@
       },
       "title": "OmniSampleOverrides",
       "type": "object"
+    },
+    "RepositoryType": {
+      "description": "Repository type.",
+      "enum": [
+        "model",
+        "dataset"
+      ],
+      "title": "RepositoryType",
+      "type": "string"
     }
   },
   "additionalProperties": false,

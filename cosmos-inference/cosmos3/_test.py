@@ -255,8 +255,17 @@ _script_configs = [
     ),
     ScriptConfig(
         script=_TEST_DIR / "sft.sh",
-        training=True,
         levels=(0, 1, 2),
+        gpus=(1, MAX_GPUS, MAX_GPUS),
+    ),
+    ScriptConfig(
+        script=_TEST_DIR / "sft_forward_dynamics.sh",
+        levels=(0, 2),
+        gpus=(1, MAX_GPUS, MAX_GPUS),
+    ),
+    ScriptConfig(
+        script=_TEST_DIR / "sft_policy.sh",
+        levels=(0, 2),
         gpus=(1, MAX_GPUS, MAX_GPUS),
     ),
 ]
