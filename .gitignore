@@ -194,6 +194,9 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
+# rumdl markdown linter local cache
+.rumdl_cache/
+
 # PyPI configuration file
 .pypirc
 

@@ -31,7 +31,7 @@ ______________________________________________________________________
 
 ## Repository Layout
 
-```
+```text
 Cosmos/
 ├── cosmos/             # Main training-infra package (this repo's import root)
 ├── cosmos-inference/   # Inference-side sibling subtree (transformers/vLLM/diffusers integrations)
@@ -51,7 +51,7 @@ Cosmos/
 
 The `cosmos/` package is organized around the workflow of a large-scale, distributed training run — particularly post-training and reinforcement-learning regimes — with each subpackage owning one concern.
 
-```
+```text
 cosmos/
 ├── algorithm/      # Loss functions, reward models, RL algorithms
 │   ├── loss/
@@ -161,18 +161,18 @@ Add new worker types as sibling subpackages — each owns its own startup, messa
 
 ## Where to Add New Code
 
-| You want to add… | Put it in… |
-| --- | --- |
-| A new loss function | `cosmos/algorithm/loss/` |
-| A new RL update rule | `cosmos/algorithm/rl/` |
-| A new reward function or head | `cosmos/algorithm/reward/` |
-| A new model architecture | `cosmos/model/` |
-| A new dataset format / augmentation | `cosmos/data/` |
-| A new training callback | `cosmos/callbacks/` |
-| A new checkpoint format or converter | `cosmos/checkpoint/` |
-| A new launcher back-end (Slurm flavor, k8s) | `cosmos/launcher/` |
-| A new RL worker role | `cosmos/workers/<new_role>/` |
-| A new evaluation suite | `cosmos/evaluation/` |
-| A new runnable example | `examples/` |
-| A new standalone CLI tool | `tools/` (repo root) for non-cosmos imports, otherwise `cosmos/tools/` |
-| A new test | `tests/` mirroring the package path |
+| You want to add…                            | Put it in…                                                             |
+| ------------------------------------------- | ---------------------------------------------------------------------- |
+| A new loss function                         | `cosmos/algorithm/loss/`                                               |
+| A new RL update rule                        | `cosmos/algorithm/rl/`                                                 |
+| A new reward function or head               | `cosmos/algorithm/reward/`                                             |
+| A new model architecture                    | `cosmos/model/`                                                        |
+| A new dataset format / augmentation         | `cosmos/data/`                                                         |
+| A new training callback                     | `cosmos/callbacks/`                                                    |
+| A new checkpoint format or converter        | `cosmos/checkpoint/`                                                   |
+| A new launcher back-end (Slurm flavor, k8s) | `cosmos/launcher/`                                                     |
+| A new RL worker role                        | `cosmos/workers/<new_role>/`                                           |
+| A new evaluation suite                      | `cosmos/evaluation/`                                                   |
+| A new runnable example                      | `examples/`                                                            |
+| A new standalone CLI tool                   | `tools/` (repo root) for non-cosmos imports, otherwise `cosmos/tools/` |
+| A new test                                  | `tests/` mirroring the package path                                    |

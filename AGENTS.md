@@ -37,19 +37,19 @@ A `justfile` is provided at the root with longer recipes (`just install`, `just 
 
 ### Training (`cosmos/`)
 
-| What                       | Where                                                                 |
-| -------------------------- | --------------------------------------------------------------------- |
-| Algorithms (losses, RL, reward) | `cosmos/algorithm/{loss,reward,rl}`                              |
-| Training loop              | `cosmos/trainer/`                                                     |
-| Models + parallelism       | `cosmos/model/`                                                       |
-| Datasets / data loading    | `cosmos/data/`                                                        |
-| Checkpoint I/O             | `cosmos/checkpoint/`                                                  |
-| Callbacks (logging, eval)  | `cosmos/callbacks/`                                                   |
-| RL workers (rollout, reward, reference, simulations) | `cosmos/workers/`                           |
-| Controller / orchestrator  | `cosmos/controller/`                                                  |
-| Launchers (Slurm, torchrun, k8s) | `cosmos/launcher/`                                              |
-| Evaluation harness         | `cosmos/evaluation/`                                                  |
-| CLI tools                  | `cosmos/tools/`, `tools/` (repo root)                                 |
+| What                                                 | Where                                 |
+| ---------------------------------------------------- | ------------------------------------- |
+| Algorithms (losses, RL, reward)                      | `cosmos/algorithm/{loss,reward,rl}`   |
+| Training loop                                        | `cosmos/trainer/`                     |
+| Models + parallelism                                 | `cosmos/model/`                       |
+| Datasets / data loading                              | `cosmos/data/`                        |
+| Checkpoint I/O                                       | `cosmos/checkpoint/`                  |
+| Callbacks (logging, eval)                            | `cosmos/callbacks/`                   |
+| RL workers (rollout, reward, reference, simulations) | `cosmos/workers/`                     |
+| Controller / orchestrator                            | `cosmos/controller/`                  |
+| Launchers (Slurm, torchrun, k8s)                     | `cosmos/launcher/`                    |
+| Evaluation harness                                   | `cosmos/evaluation/`                  |
+| CLI tools                                            | `cosmos/tools/`, `tools/` (repo root) |
 
 For a per-subpackage tour with descriptions, see [`docs/code_structure.md`](./docs/code_structure.md).
 
@@ -83,35 +83,35 @@ For a per-subpackage tour with descriptions, see [`docs/code_structure.md`](./do
 
 ### Inference (`cosmos-inference/docs/`)
 
-| Doc                                                                          | What it covers                                           |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------- |
-| [cosmos-inference/docs/setup.md](./cosmos-inference/docs/setup.md)           | Inference-side install/env (subtree-local).              |
-| [cosmos-inference/docs/inference.md](./cosmos-inference/docs/inference.md)   | Sample arguments, default values, schemas.               |
-| [cosmos-inference/docs/inference_online.md](./cosmos-inference/docs/inference_online.md) | Online serving with Ray Serve and Gradio.    |
-| [cosmos-inference/docs/prompting.md](./cosmos-inference/docs/prompting.md)   | Prompt engineering, upsampling with vLLM.                |
-| [cosmos-inference/docs/faq.md](./cosmos-inference/docs/faq.md)               | Inference-side FAQ and troubleshooting.                  |
+| Doc                                                                                      | What it covers                              |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------- |
+| [cosmos-inference/docs/setup.md](./cosmos-inference/docs/setup.md)                       | Inference-side install/env (subtree-local). |
+| [cosmos-inference/docs/inference.md](./cosmos-inference/docs/inference.md)               | Sample arguments, default values, schemas.  |
+| [cosmos-inference/docs/inference_online.md](./cosmos-inference/docs/inference_online.md) | Online serving with Ray Serve and Gradio.   |
+| [cosmos-inference/docs/prompting.md](./cosmos-inference/docs/prompting.md)               | Prompt engineering, upsampling with vLLM.   |
+| [cosmos-inference/docs/faq.md](./cosmos-inference/docs/faq.md)                           | Inference-side FAQ and troubleshooting.     |
 
 ## Common Tasks
 
 ### Training
 
-| Task                    | Command                                                                                       |
-| ----------------------- | --------------------------------------------------------------------------------------------- |
-| Single-GPU train (smoke) | `python -m cosmos.scripts.train --config <experiment-config>`                                |
-| Multi-GPU train         | `torchrun --nproc-per-node=8 -m cosmos.scripts.train --config <experiment-config>`            |
-| Resume from checkpoint  | `python -m cosmos.scripts.train --config <experiment-config> --resume <path>`                 |
-| Export DCP → HF         | `python -m cosmos.scripts.export_checkpoint --src <dcp> --dst <hf>`                           |
-| Run a config sweep      | `just run python -m cosmos.scripts.train --config <experiment-config> --overrides "..."`      |
+| Task                     | Command                                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------------------- |
+| Single-GPU train (smoke) | `python -m cosmos.scripts.train --config <experiment-config>`                            |
+| Multi-GPU train          | `torchrun --nproc-per-node=8 -m cosmos.scripts.train --config <experiment-config>`       |
+| Resume from checkpoint   | `python -m cosmos.scripts.train --config <experiment-config> --resume <path>`            |
+| Export DCP → HF          | `python -m cosmos.scripts.export_checkpoint --src <dcp> --dst <hf>`                      |
+| Run a config sweep       | `just run python -m cosmos.scripts.train --config <experiment-config> --overrides "..."` |
 
 ### Inference (in `cosmos-inference/`)
 
-| Task                    | Command                                                                                                              |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Task                    | Command                                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Single-GPU inference    | `python -m cosmos3.scripts.inference -i cosmos-inference/inputs/omni/t2v.json -o outputs/ --checkpoint-path Cosmos3-Nano` |
-| Multi-GPU inference     | `torchrun --nproc-per-node=4 -m cosmos3.scripts.inference --parallelism-preset=latency -i ... -o outputs/ ...`       |
-| Start online Ray server | `python -m cosmos3.ray.serve --parallelism-preset=latency -o outputs/ray_serve --checkpoint-path Cosmos3-Nano`       |
-| Launch Gradio UI        | `python -m cosmos3.ray.gradio --port=8080`                                                                           |
-| See all CLI flags       | `python -m cosmos3.scripts.inference --help`                                                                         |
+| Multi-GPU inference     | `torchrun --nproc-per-node=4 -m cosmos3.scripts.inference --parallelism-preset=latency -i ... -o outputs/ ...`            |
+| Start online Ray server | `python -m cosmos3.ray.serve --parallelism-preset=latency -o outputs/ray_serve --checkpoint-path Cosmos3-Nano`            |
+| Launch Gradio UI        | `python -m cosmos3.ray.gradio --port=8080`                                                                                |
+| See all CLI flags       | `python -m cosmos3.scripts.inference --help`                                                                              |
 
 ## Gotchas
 

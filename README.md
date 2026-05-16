@@ -48,23 +48,23 @@ uv sync --all-extras --group=cu130-train
 source .venv/bin/activate && export LD_LIBRARY_PATH=
 ```
 
-If you are starting from the [recommended NVIDIA NGC base image](./docs/setup.md#recommended-base-image) (`nvcr.io/nvidia/pytorch:25.09-py3`), a one-shot quickstart is documented [here](./docs/setup.md#quickstart-from-the-recommended-base-image).
+If you are starting from the [recommended NVIDIA NGC base image](./docs/setup.md#recommended-base-image) (`nvcr.io/nvidia/pytorch:25.09-py3`), see the [one-shot quickstart](./docs/setup.md#quickstart-from-the-recommended-base-image).
 
 ## Training
 
 The training infrastructure lives in [`cosmos/`](./cosmos), with user-facing documentation in [`docs/`](./docs):
 
-| Topic                                                    | What it covers                                                                                                          |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| [Setup](./docs/setup.md)                                 | Hardware/software prerequisites, `uv` install paths, CUDA variants, Docker base image, and base-checkpoint downloading. |
-| [Code Structure](./docs/code_structure.md)               | Repository layout and a per-subpackage tour of `cosmos/` — where each concern lives and where to add new code.          |
-| [Configs](./docs/configs.md)                             | The LazyConfig / experiment system, CLI and YAML overrides, and how to register a new experiment.                       |
-| [Dataset](./docs/dataset.md)                             | Supported data formats (JSONL, WebDataset, LeRobot), preparation steps, augmentations, and multi-dataset weighting.     |
-| [Training](./docs/training.md)                           | Launching single-GPU, multi-GPU, and multi-node runs; parallelism strategies; mixed precision; resuming.                |
-| [Checkpoints](./docs/checkpoints.md)                     | DCP vs. HuggingFace `safetensors`, conversion utilities, and resuming a training run from a saved checkpoint.           |
+| Topic                                                        | What it covers                                                                                                          |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| [Setup](./docs/setup.md)                                     | Hardware/software prerequisites, `uv` install paths, CUDA variants, Docker base image, and base-checkpoint downloading. |
+| [Code Structure](./docs/code_structure.md)                   | Repository layout and a per-subpackage tour of `cosmos/` — where each concern lives and where to add new code.          |
+| [Configs](./docs/configs.md)                                 | The LazyConfig / experiment system, CLI and YAML overrides, and how to register a new experiment.                       |
+| [Dataset](./docs/dataset.md)                                 | Supported data formats (JSONL, WebDataset, LeRobot), preparation steps, augmentations, and multi-dataset weighting.     |
+| [Training](./docs/training.md)                               | Launching single-GPU, multi-GPU, and multi-node runs; parallelism strategies; mixed precision; resuming.                |
+| [Checkpoints](./docs/checkpoints.md)                         | DCP vs. HuggingFace `safetensors`, conversion utilities, and resuming a training run from a saved checkpoint.           |
 | [Inference (from a trained checkpoint)](./docs/inference.md) | Loading a trained checkpoint into one of the inference backends — points back into `cosmos-inference/`.                 |
-| [Examples](./docs/examples.md)                           | End-to-end training, fine-tuning, and inference walkthroughs; runnable scripts in [`examples/`](./examples).            |
-| [FAQ](./docs/faq.md)                                     | Troubleshooting (OOM, NCCL hangs, slow training), environment variables, and common pitfalls.                           |
+| [Examples](./docs/examples.md)                               | End-to-end training, fine-tuning, and inference walkthroughs; runnable scripts in [`examples/`](./examples).            |
+| [FAQ](./docs/faq.md)                                         | Troubleshooting (OOM, NCCL hangs, slow training), environment variables, and common pitfalls.                           |
 
 A minimal single-GPU training launch looks like:
 

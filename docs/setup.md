@@ -221,6 +221,7 @@ Training in this repo typically starts from a pretrained base checkpoint that yo
 2. Log in to the [Hugging Face CLI](https://huggingface.co/docs/huggingface_hub/en/guides/cli): `uvx hf auth login`.
 3. Accept the license for any gated model you intend to use (e.g. the [NVIDIA Open Model License Agreement](https://huggingface.co/nvidia/Cosmos-Guardrail1) where applicable).
 4. Test access:
+
    ```shell
    uvx hf@latest download --repo-type model nvidia/Cosmos-Guardrail1 \
      --revision d6d4bfa899a71454a700907664f3e88f503950cf --include "README.md"

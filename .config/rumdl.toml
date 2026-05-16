@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,17 +13,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-exclude: (?x)(
-    ^cosmos-inference/
-  )
-repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-      - id: check-added-large-files
-        args: ['--maxkb=10000'] # 10MB
-      - id: forbid-submodules
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.0
-    hooks:
-      - id: gitleaks
+# https://rumdl.dev/global-settings/
+[global]
+flavor = "standard"
+exclude = [
+    "ATTRIBUTIONS.md",
+    "_src",
+]
+disable = [
+    "MD013", # line-length
+    "MD033", # inline-html
+    "MD040", # fenced-code-language
+]
+
+# https://rumdl.dev/rules/
+
+[per-file-ignores]
+"README.md" = [
+    "MD041" # first-line-heading
+]
+
+# ul-style
+[MD004]
+style = "dash"
+
+# table-format
+[MD060]
+enabled = true
+style = "aligned"
