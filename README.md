@@ -33,6 +33,8 @@ The inference side under [`cosmos-inference/`](./cosmos-inference) exposes ready
 
 For full instructions and alternative installation methods, see [Setup](./docs/setup.md).
 
+Before installing, make sure your machine meets the [System Requirements](./docs/setup.md#system-requirements). If you want a curated PyTorch + CUDA environment, start from the [recommended base image](./docs/setup.md#recommended-base-image).
+
 Install system dependencies:
 
 ```shell
