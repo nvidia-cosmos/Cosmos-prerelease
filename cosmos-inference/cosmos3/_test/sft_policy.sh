@@ -20,8 +20,8 @@ export DATASET_PATH=$(uvx hf@latest download --repo-type dataset nvidia/LIBERO_L
 # HF -> DCP
 # Use temporary directory, since output is large.
 python -m cosmos3.scripts.convert_model_to_dcp \
-  --checkpoint-path $BASE_CHECKPOINT_NAME \
-  -o $TMP_DIR/checkpoint_base
+    --checkpoint-path $BASE_CHECKPOINT_NAME \
+    -o $TMP_DIR/checkpoint_base
 
 # Train
 torchrun $TORCHRUN_ARGS -m cosmos3.scripts.train \
@@ -31,21 +31,3 @@ torchrun $TORCHRUN_ARGS -m cosmos3.scripts.train \
     --config-overrides \
     "checkpoint.load_path=$TMP_DIR/checkpoint_base" \
     $TRAIN_OVERRIDES
-
-CHECKPOINT_ITER=$(cat $OUTPUT_DIR/train/job/checkpoints/latest_checkpoint.txt)
-CHECKPOINT_PATH=$OUTPUT_DIR/train/job/checkpoints/$CHECKPOINT_ITER
-
-# DCP -> HF
-# Use temporary directory, since output is large.
-python -m cosmos3.scripts.export_model \
-    -o $TMP_DIR/model \
-    --checkpoint-path $CHECKPOINT_PATH \
-    --config-file $OUTPUT_DIR/train/config.yaml
-
-# Eval
-torchrun $TORCHRUN_ARGS -m cosmos3.scripts.eval \
-    -o $OUTPUT_DIR/inference \
-    --checkpoint-path $TMP_DIR/model \
-    --dataset.config-file $OUTPUT_DIR/train/config.yaml \
-    --dataset.num-samples 1 \
-    $INFERENCE_ARGS

@@ -15,7 +15,7 @@ ______________________________________________________________________
 
 <!--TOC-->
 
-**EXPERIMENTAL:** This guide is not tested. The code is provided for learning purposes.
+**EXPERIMENTAL:** This guide is not tested. The code is provided for learning purposes only.
 
 We recommend first reading [Inference](./inference.md).
 

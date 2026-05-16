@@ -20,8 +20,8 @@ export DATASET_PATH=$(uvx hf@latest download --repo-type dataset nvidia/bridge-v
 # HF -> DCP
 # Use temporary directory, since output is large.
 python -m cosmos3.scripts.convert_model_to_dcp \
-  --checkpoint-path $BASE_CHECKPOINT_NAME \
-  -o $TMP_DIR/checkpoint_base
+    --checkpoint-path $BASE_CHECKPOINT_NAME \
+    -o $TMP_DIR/checkpoint_base
 
 # Train
 torchrun $TORCHRUN_ARGS -m cosmos3.scripts.train \

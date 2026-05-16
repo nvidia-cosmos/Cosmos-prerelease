@@ -47,6 +47,12 @@ Outputs:
   - `sample_outputs.json`: Generation status, action (if enabled).
   - `vision.jpg`, `vision.mp4`: Vision output (if enabled).
 
+To see all available arguments:
+
+```shell
+python -m cosmos3.scripts.inference --help
+```
+
 ## Parallelism Arguments
 
 - `--parallelism-preset`

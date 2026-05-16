@@ -133,7 +133,8 @@ class SFTDataset(torch.utils.data.IterableDataset):
         self.is_initialized = False
         self.output_sizes = VIDEO_RES_SIZE_INFO[resolution]
 
-        self.vlm_tokenizer = lazy_instantiate(self.tokenizer_config)
+        _vlm_proc = lazy_instantiate(self.tokenizer_config)
+        self.vlm_tokenizer = _vlm_proc.tokenizer
         self.vlm_tokenizer, _ = add_special_tokens(self.vlm_tokenizer)
 
     def __len__(self):

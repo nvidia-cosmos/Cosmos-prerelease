@@ -50,7 +50,7 @@ BASE_CHECKPOINT_NAME=Cosmos3-Nano
 CONFIG_FILE="cosmos3/configs/experiment/mixed_modality_sft_nano.yaml"
 
 # Or, Super with LoRA
-BASE_CHECKPOINT_NAME=Cosmos3-Nano
+BASE_CHECKPOINT_NAME=Cosmos3-Super
 CONFIG_FILE="cosmos3/configs/experiment/mixed_modality_sft_cosmos3_super.yaml"
 
 export DATASET_PATH=$(uvx hf@latest download --repo-type dataset nvidia/bridge-v2-subset-synthetic-captions --revision 46468e12ac0dd36901e9e3240d4fc7620942b5d7 --quiet)/sft_dataset_bridge
@@ -94,7 +94,7 @@ Convert base checkpoint to [PyTorch Distributed Checkpoint (DCP)](https://pytorc
 
 ```shell
 BASE_CHECKPOINT_PATH=/tmp/$USER/checkpoints/$BASE_CHECKPOINT_NAME
-torchrun -m cosmos3.scripts.convert_model_to_dcp \
+python -m cosmos3.scripts.convert_model_to_dcp \
   -o $BASE_CHECKPOINT_PATH \
   --checkpoint-path $BASE_CHECKPOINT_NAME
 ```
@@ -141,7 +141,7 @@ Export the DCP checkpoint to a Hugging Face safetensors checkpoint:
 CHECKPOINT_ITER=$(cat outputs/train/job/checkpoints/latest_checkpoint.txt)
 CHECKPOINT_PATH=outputs/train/job/checkpoints/$CHECKPOINT_ITER
 
-torchrun -m cosmos3.scripts.export_model \
+python -m cosmos3.scripts.export_model \
   --checkpoint-path $CHECKPOINT_PATH \
   --config-file outputs/train/config.yaml \
   -o outputs/train/model

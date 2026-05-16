@@ -21,6 +21,7 @@ import wandb
 from torch.distributed.tensor import DTensor
 from torch.nn.parallel import DistributedDataParallel
 
+from cosmos3._src.imaginaire.utils import log
 from cosmos3._src.imaginaire.utils.callback import Callback
 
 
@@ -329,8 +330,11 @@ class GradClip(Callback):
                 for mesh_str, record in state.items():
                     avg = record.get_stat()
                     if self.track_per_modality:
-                        log_dict[f"clip_grad_norm/{modality}/{mesh_str}"] = avg
+                        key = f"clip_grad_norm/{modality}/{mesh_str}"
                     else:
-                        log_dict[f"clip_grad_norm/{mesh_str}"] = avg
+                        key = f"clip_grad_norm/{mesh_str}"
+                    log_dict[key] = avg
+                    if mesh_str == "global":
+                        log.info(f"{key}: {avg:.5f} (iteration {iteration})", rank0_only=False)
             if wandb.run:
                 wandb.log(log_dict, step=iteration)

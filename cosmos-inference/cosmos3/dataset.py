@@ -15,6 +15,7 @@
 
 """Preprocess dataset for inference."""
 
+from pathlib import Path
 from typing import Annotated, Any, Literal, cast, get_args
 
 import hydra
@@ -25,8 +26,13 @@ from omegaconf import OmegaConf
 from torch.utils.data import Dataset, IterableDataset
 from typing_extensions import assert_never
 
-from cosmos3.common.args import ResolvedFilePath, ResolvedPath, SetupArgs
-from cosmos3.common.config import deserialize_config
+from cosmos3.common.args import (
+    ConfigFileType,
+    ResolvedFilePath,
+    ResolvedPath,
+    SetupArgs,
+)
+from cosmos3.common.config import deserialize_config_dict
 from cosmos3.dataset_samples import (
     DatasetSamples,
     IterableDatasetSamples,
@@ -111,14 +117,15 @@ class DatasetArgs(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
-    config_file: ResolvedFilePath
-    """Path to a serialized YAML dataset config file."""
+    dataset_experiment: str = ""
+    """Hydra experiment for the dataset config. If empty, the setup experiment is used."""
+
     dataset: str = ""
     """Dataset selector (matched against dataloader keys or list_of_datasets names)."""
     sample_name: str = ""
     """Override the dataset name used in sample paths (output directories, ground truth).
     Falls back to ``dataset`` if empty."""
-    split: Split = "val"
+    dataset_split: Split = "val"
     """Dataset split."""
     model_mode: ModelMode | Literal["joint"] = "joint"
     """Model mode(s) to iterate over."""
@@ -141,16 +148,19 @@ class DatasetArgs(pydantic.BaseModel):
     but unlike root_override, triggers a download first."""
     force_download: bool = False
     """Force re-download even if local dataset directory already exists."""
-    name_override: str = ""
+    dataset_name_override: str = ""
     """Override the inner dataset's name field after narrowing."""
-    kwargs: dict[str, Any] = {}
+    dataset_kwargs: dict[str, Any] = {}
     """Extra keyword arguments applied to the inner dataset config before instantiation.
     Useful for overriding constructor parameters like ``snap_to_subtask`` or ``max_subtasks_per_episode``."""
     cache_dir: Annotated[ResolvedPath | None, tyro.conf.arg(aliases=("-c",))] = None
     """Local cache directory for GCS downloads. Required when ``gcs_path_map`` triggers a download."""
 
+    config_file: ResolvedFilePath | None = None
+    """Path to a serialized YAML dataset config file."""
+
     @property
-    def label(self) -> str:
+    def dataset_label(self) -> str:
         """Label used for sample output paths; falls back to the selector when unset."""
         return self.sample_name or self.dataset
 
@@ -165,13 +175,26 @@ def create_dataset(
 
     * **config store:** provide ``config_args`` with
       ``config_file`` + ``experiment`` to resolve the config via Hydra.
-    * **YAML:** set ``args.yaml`` to a serialized YAML config
+    * **YAML:** set ``args.dataset_yaml`` to a serialized YAML config
 
     Args:
         args: Dataset selection and download parameters.
         config_args: Hydra config arguments (internal config store).
     """
-    config = deserialize_config(args.config_file)
+
+    # --- load config ----------------------------------------------------------
+    if args.config_file is not None:
+        config = deserialize_config_dict(args.config_file)
+    elif config_args is not None:
+        if args.dataset_experiment:
+            config_args = config_args.model_copy(update={"experiment": args.dataset_experiment})
+        # load_config() only handles .py module configs; YAML/JSON use the dict path.
+        if config_args.config_file_type == ConfigFileType.MODULE:
+            config = config_args.load_config()
+        else:
+            config = deserialize_config_dict(Path(config_args.config_file))
+    else:
+        raise ValueError("Provide 'config_args' or set 'dataset_yaml'")
 
     def _cfg(key: str) -> Any:
         return config[key] if isinstance(config, dict) else getattr(config, key)
@@ -179,12 +202,12 @@ def create_dataset(
     _train = _cfg("dataloader_train")
     _val = _cfg("dataloader_val")
 
-    if args.split == "train":
+    if args.dataset_split == "train":
         dataloaders_config = _train
-    elif args.split in ("val", "full"):
+    elif args.dataset_split in ("val", "full"):
         dataloaders_config = _val if _val is not None else _train
     else:
-        assert_never(args.split)
+        assert_never(args.dataset_split)
     assert dataloaders_config is not None, "Neither dataloader_val nor dataloader_train found in config"
 
     dataloaders_dict: dict[str, Any] = dataloaders_config["dataloaders"]
@@ -210,11 +233,11 @@ def create_dataset(
         _inner = inner_ds["dataset"]
 
     # --- apply dataset_name override ------------------------------------------
-    if args.name_override and isinstance(_inner, dict):
+    if args.dataset_name_override and isinstance(_inner, dict):
         for key in ("dataset_name", "name"):
             if key in _inner:
-                logger.info(f"Overriding inner dataset {key}={_inner[key]!r} -> {args.name_override!r}")
-                _inner[key] = args.name_override
+                logger.info(f"Overriding inner dataset {key}={_inner[key]!r} -> {args.dataset_name_override!r}")
+                _inner[key] = args.dataset_name_override
                 break
 
     # --- resolve root via overrides / gcs_path_map and download ----------
@@ -265,7 +288,7 @@ def create_dataset(
                     args.cache_dir,
                     gcs_credentials=args.gcs_credentials,
                     force_download=args.force_download,
-                    dataset_name_override=args.name_override,
+                    dataset_name_override=args.dataset_name_override,
                 )
             )
 
@@ -277,27 +300,27 @@ def create_dataset(
 
     # --- override split -------------------------------------------------------
     if isinstance(_inner, dict) and "split" in _inner:
-        _inner["split"] = args.split
-        logger.info(f"Overriding dataset split to {args.split!r}")
+        _inner["split"] = args.dataset_split
+        logger.info(f"Overriding dataset split to {args.dataset_split!r}")
 
     if isinstance(_inner, dict) and "is_val" in _inner:
-        is_val = args.split == "val"
+        is_val = args.dataset_split == "val"
         _inner["is_val"] = is_val
         logger.info(f"Overriding dataset is_val to {is_val!r}")
 
     # --- disable training-only augmentations for val and 'full' --------------------------
-    if args.split in ("val", "full") and "cfg_dropout_rate" in dataset_config:
+    if args.dataset_split in ("val", "full") and "cfg_dropout_rate" in dataset_config:
         dataset_config["cfg_dropout_rate"] = 0.0
         logger.info("Overriding cfg_dropout_rate to 0.0 for val export")
 
     # --- disable shuffle for val dataset export -------------------------------
-    if args.split == "val" and isinstance(_inner, dict) and "shuffle" in _inner:
+    if args.dataset_split == "val" and isinstance(_inner, dict) and "shuffle" in _inner:
         _inner["shuffle"] = False
         logger.info("Overriding dataset shuffle to False for val export")
 
     # --- apply dataset_kwargs overrides --------------------------------------
-    if args.kwargs and isinstance(_inner, dict):
-        for key, value in args.kwargs.items():
+    if args.dataset_kwargs and isinstance(_inner, dict):
+        for key, value in args.dataset_kwargs.items():
             logger.info(f"Overriding dataset {key}={_inner.get(key)!r} -> {value!r}")
             _inner[key] = value
 
@@ -325,8 +348,8 @@ def create_dataset(
     def _create_dataset_samples(ds: Dataset, m: list[str], ids: list[int]) -> DatasetSamples:
         sample_overrides_data = config_args.sample_overrides.model_dump(exclude_none=True) if config_args else {}
         if isinstance(ds, IterableDataset):
-            return IterableDatasetSamples(ds, m, ids, transform, resolution, args.label, sample_overrides_data)
-        return MapDatasetSamples(ds, m, ids, transform, resolution, args.label, sample_overrides_data)
+            return IterableDatasetSamples(ds, m, ids, transform, resolution, args.dataset_label, sample_overrides_data)
+        return MapDatasetSamples(ds, m, ids, transform, resolution, args.dataset_label, sample_overrides_data)
 
     # --- compute sample indices -----------------------------------------------
     sample_ids = list(range(0, dataset_size, args.sample_stride))

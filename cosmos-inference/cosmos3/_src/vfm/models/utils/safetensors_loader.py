@@ -52,6 +52,7 @@ S3 / GCS and support for Cosmos3 VFM models.
 https://github.com/nvidia-cosmos/cosmos-rl/blob/main/cosmos_rl/utils/multi_rank_weight_loader.py
 """
 
+import os
 import re
 import time
 from collections.abc import Callable, Iterator
@@ -81,6 +82,72 @@ _VLM_KEY_PREFIXES: tuple[str, ...] = (
     "model.",
     "",
 )
+
+_HF_URI_PREFIX = "hf://"
+
+
+def _looks_like_hf_repo_id(checkpoint_path: str) -> bool:
+    """Return True for unambiguous bare Hugging Face repo IDs.
+
+    Explicit ``hf://`` paths are handled separately.  For bare paths, require the
+    common ``namespace/repo`` shape so local relative paths such as ``ckpt`` are
+    not silently treated as Hub repos.
+    """
+    if os.path.exists(os.path.expanduser(checkpoint_path)):
+        return False
+    if checkpoint_path.startswith(("/", "./", "../", "~")):
+        return False
+    if "://" in checkpoint_path:
+        return False
+    return re.fullmatch(r"[\w.-]+/[\w.-]+", checkpoint_path) is not None
+
+
+def _download_hf_checkpoint(checkpoint_path: str) -> str:
+    """Download safetensors from Hugging Face Hub and return the local snapshot path."""
+    from huggingface_hub import snapshot_download
+
+    repo_id = checkpoint_path.removeprefix(_HF_URI_PREFIX)
+    hf_home = os.environ.get("HF_HOME")
+    cache_dir = os.path.join(hf_home, "hub") if hf_home else None
+    token = os.environ.get("HF_TOKEN")
+    log.info(f"Resolving Hugging Face checkpoint: {repo_id}", rank0_only=False)
+    local_path = snapshot_download(
+        repo_id=repo_id,
+        token=token,
+        cache_dir=cache_dir,
+        allow_patterns=["*.safetensors", "*.safetensors.index.json"],
+    )
+    log.info(f"Resolved Hugging Face checkpoint {repo_id} to {local_path}", rank0_only=False)
+    return local_path
+
+
+def _is_hf_checkpoint_candidate(checkpoint_path: str) -> bool:
+    return checkpoint_path.startswith(_HF_URI_PREFIX) or _looks_like_hf_repo_id(checkpoint_path)
+
+
+def _make_backend_args(checkpoint_path: str, credential_path: str | None) -> dict[str, str | None] | None:
+    if checkpoint_path.startswith("s3://"):
+        return {
+            "backend": "s3",
+            "s3_credential_path": credential_path,
+        }
+    return None
+
+
+def _list_safetensors_files(
+    checkpoint_path: str,
+    backend_args: dict[str, str | None] | None,
+) -> list[str]:
+    return list(
+        easy_io.list_dir_or_file(
+            checkpoint_path,
+            list_dir=False,
+            list_file=True,
+            suffix="safetensors",
+            recursive=False,
+            backend_args=backend_args,
+        )
+    )
 
 
 def _get_local_rank_and_size(device_mesh: DeviceMesh) -> tuple[int, int]:
@@ -271,7 +338,7 @@ class MultiRankCheckpointLoader:
     def load_files_parallel(
         self,
         checkpoint_path: str,
-        credential_path: str,
+        credential_path: str | None,
         loading_device: torch.device,
     ) -> tuple[
         dict[str, torch.Tensor],
@@ -282,7 +349,10 @@ class MultiRankCheckpointLoader:
         Load safetensors files in parallel across ranks.
 
         Args:
-            checkpoint_path: Path to the model directory.
+            checkpoint_path: Path to the model directory. Local paths and S3
+                URIs are tried first; if no safetensors are found, explicit
+                ``hf://org/model`` Hub URIs and bare ``org/model`` repo IDs
+                fall back to Hugging Face.
             credential_path: Path to the credential file for S3/GCS.
             loading_device: Device to load tensors on.
 
@@ -296,26 +366,66 @@ class MultiRankCheckpointLoader:
         rank_tensor_metadata = {}  # {tensor_name: (shape, dtype)} for this rank
         weights_of_ckpt_names = set()
 
-        if checkpoint_path.startswith("s3://"):
-            backend_args = {
-                "backend": "s3",
-                "s3_credential_path": credential_path,
-            }
-        else:
-            backend_args = None
+        backend_args = _make_backend_args(checkpoint_path, credential_path)
 
         log.info(f"Loading safetensors files from: {checkpoint_path}", rank0_only=False)
         log.info(f"Credential path: {credential_path}", rank0_only=False)
-        for file_idx, file_path in enumerate(
-            easy_io.list_dir_or_file(
-                checkpoint_path,
-                list_dir=False,
-                list_file=True,
-                suffix="safetensors",
-                recursive=False,
-                backend_args=backend_args,
-            )
-        ):
+        list_error: Exception | None = None
+        if checkpoint_path.startswith(_HF_URI_PREFIX):
+            safetensors_files: list[str] = []
+        else:
+            try:
+                safetensors_files = _list_safetensors_files(checkpoint_path, backend_args)
+            except Exception as exc:
+                if not _is_hf_checkpoint_candidate(checkpoint_path):
+                    raise
+                list_error = exc
+                safetensors_files = []
+
+        if not safetensors_files:
+            if _is_hf_checkpoint_candidate(checkpoint_path):
+                original_checkpoint_path = checkpoint_path
+                # Multi-rank: serialize the actual download through global rank 0
+                # so we don't race on the shared HF cache. snapshot_download's
+                # per-blob locks are unreliable on NFS/lustre under concurrent
+                # access, and hitting HF from N ranks simultaneously also risks
+                # rate-limiting; without this gate the snapshot dir can end up
+                # with only config.json and the listing below fails.
+                #
+                # We do NOT need N downloads + N barriers. The Slurm job mounts
+                # one shared HF cache (HF_HOME), so once rank 0 finishes the
+                # download all other ranks share that cache. The second call to
+                # _download_hf_checkpoint() on non-zero ranks therefore hits the
+                # populated cache and just resolves the local snapshot path
+                # (snapshot_download is idempotent on cache hits — no re-download,
+                # no network). Two barriers total:
+                #   1. After rank 0's actual download — others wait so they see
+                #      a complete cache before resolving.
+                #   2. After non-zero ranks' cache-hit path resolution — keeps
+                #      ranks aligned before subsequent collective ops below.
+                if dist.is_initialized() and dist.get_world_size() > 1:
+                    if dist.get_rank() == 0:
+                        checkpoint_path = _download_hf_checkpoint(checkpoint_path)
+                    dist.barrier()
+                    if dist.get_rank() != 0:
+                        checkpoint_path = _download_hf_checkpoint(checkpoint_path)
+                    dist.barrier()
+                else:
+                    checkpoint_path = _download_hf_checkpoint(checkpoint_path)
+                backend_args = None
+                log.info(
+                    "No local/S3 safetensors found; falling back to Hugging Face checkpoint "
+                    f"{original_checkpoint_path} -> {checkpoint_path}",
+                    rank0_only=False,
+                )
+                safetensors_files = _list_safetensors_files(checkpoint_path, backend_args)
+            elif list_error is not None:
+                raise list_error
+
+        if not safetensors_files:
+            raise FileNotFoundError(f"No .safetensors files found in checkpoint path: {checkpoint_path}")
+
+        for file_idx, file_path in enumerate(safetensors_files):
             file_rank = file_idx % self.world_size
             if self.rank == file_rank:
                 log.info(f"Loading safetensors file: {file_path}", rank0_only=False)
@@ -743,7 +853,7 @@ def detect_vlm_checkpoint_format(all_tensor_names: set[str]) -> str:
 def load_language_model(
     model: torch.nn.Module,
     checkpoint_path: str,
-    credential_path: str,
+    credential_path: str | None,
     parallel_dims: ParallelDims | None,
     checkpoint_format: str | None = None,
 ) -> set[str]:
@@ -753,8 +863,11 @@ def load_language_model(
 
     Args:
         model: The language model to load weights into.
-        checkpoint_path: Path to checkpoint containing .safetensors files.
-        credential_path: Path to S3 credentials
+        checkpoint_path: Path to checkpoint containing .safetensors files. Local
+            paths and S3 URIs are tried first; if no safetensors are found,
+            explicit ``hf://org/model`` Hub URIs and bare ``org/model`` repo IDs
+            fall back to Hugging Face.
+        credential_path: Path to S3 credentials, or None for local/HF.
         parallel_dims: ParallelDims object to use for parallel loading.
             If None, the loading is done in a single rank.
         checkpoint_format: ``"qwen3"``, ``"nemotron_3_dense_vl"``, ``"nemotron_3_llm"``, or None to auto-detect.
@@ -888,6 +1001,10 @@ def load_vlm_model(
     extra_skip_patterns: list[str] | None = None,
 ) -> set[str]:
     """Load a HF VLM checkpoint (safetensors) into an FSDP-wrapped HFModel.
+
+    Local paths and S3 URIs are tried first; if no safetensors are found,
+    explicit ``hf://org/model`` Hub URIs and bare ``org/model`` repo IDs fall
+    back to Hugging Face.
 
     Both ``tensor_names_to_skip`` and ``extra_skip_patterns`` are lists of
     regex patterns applied to the RESOLVED model key (post-name_converter).

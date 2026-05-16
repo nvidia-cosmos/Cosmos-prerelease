@@ -99,12 +99,10 @@ dataloader_train:
     pin_memory: true
     prefetch_factor: 4
     sampler: null
-  dataloaders: null
   dataset_name: default
   max_samples_per_batch: null
   max_sequence_length: 45056
   patch_spatial: 2
-  seed: 42
   sound_latent_fps: 0
   tokenizer_spatial_compression_factor: 16
   tokenizer_temporal_compression_factor: 4
@@ -139,7 +137,7 @@ job:
     object_store_credential_data: ''
     object_store_credential_pretrained: ''
   group: sft
-  name: expPTV305_sft_qwen3_32b_lora
+  name: mixed_modality_sft_cosmos3_super
   project: cosmos3
   wandb_mode: disabled
 model:
@@ -370,7 +368,9 @@ optimizer:
   optimizer_type: AdamW
   weight_decay: 0
 scheduler:
-  _target_: cosmos3._src.imaginaire.functional.lr_scheduler.LambdaWarmUpCosineScheduler
+  _target_: cosmos3._src.vfm.utils.optimizer.build_lr_scheduler
+  optimizer: null
+  lr_scheduler_type: LambdaCosine
   cycle_lengths:
   - 1000
   f_max:
@@ -475,9 +475,6 @@ trainer:
       every_n: 5
       gc_level: 1
       warm_up: 1
-    mfu: null
-    moe_specialization: null
-    moe_stability: null
     norm_monitor:
       _target_: cosmos3._src.vfm.callbacks.norm_monitor.NormMonitor
       every_n: 100
@@ -487,7 +484,6 @@ trainer:
       save_s3: false
       step_size: 1
       track_activations: true
-    ofu: null
     param_count:
       _target_: cosmos3._src.vfm.callbacks.param_count.ParamCount
       save_s3: false
@@ -502,9 +498,6 @@ trainer:
     skip_nan_step:
       _target_: cosmos3._src.vfm.callbacks.skip_nan_step.SkipNaNStep
       max_consecutive_nan: 100
-    straggler_detection:
-      enabled: false
-      report_freq: 50
     wandb:
       _target_: cosmos3._src.imaginaire.utils.callback.WandBCallback
       config: null

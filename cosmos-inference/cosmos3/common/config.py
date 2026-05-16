@@ -120,9 +120,9 @@ def serialize_config_dict(config_dict: dict, config_file: Path) -> None:
     """Serialize config dict to a file."""
     match config_file.suffix.lower():
         case ".yaml" | ".yml":
-            config_str = yaml.safe_dump(config_dict)
+            config_str = yaml.safe_dump(config_dict, sort_keys=True)
         case ".json":
-            config_str = json.dumps(config_dict, indent=2)
+            config_str = json.dumps(config_dict, indent=2, sort_keys=True)
         case _:
             raise ValueError(f"Unsupported file extension '{config_file.suffix}'")
     config_str = apply_config_replacements(config_str)

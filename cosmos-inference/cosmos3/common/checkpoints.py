@@ -58,6 +58,34 @@ def register_checkpoints():
     register_checkpoint(
         CheckpointConfig(
             uuid=uuid4().hex,
+            name="Cosmos3-Nano-Reasoner",
+            s3=CheckpointDirS3(
+                uri="s3://bucket/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Reasoner-8B-Private",
+            ),
+            hf=CheckpointDirHf(
+                repository="nvidia/Cosmos3-Nano-Reasoner",
+                revision="6406357cdc32fbf8db5f51ff7992343803b06961",
+            ),
+        ),
+    )
+
+    register_checkpoint(
+        CheckpointConfig(
+            uuid=uuid4().hex,
+            name="Cosmos3-Super-Reasoner",
+            s3=CheckpointDirS3(
+                uri="s3://bucket/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Reasoner-32B-Private",
+            ),
+            hf=CheckpointDirHf(
+                repository="nvidia/Cosmos3-Super-Reasoner",
+                revision="b9b716f3508dfa442e0c8ba32fb5d0c9adf2a32c",
+            ),
+        ),
+    )
+
+    register_checkpoint(
+        CheckpointConfig(
+            uuid=uuid4().hex,
             name="Wan2.1/vae",
             s3=CheckpointFileS3(
                 uri="s3://bucket/pretrained/tokenizers/video/wan2pt1/Wan2.1_VAE.pth",
@@ -81,6 +109,21 @@ def register_checkpoints():
                 repository="Wan-AI/Wan2.2-TI2V-5B",
                 revision="921dbaf3f1674a56f47e83fb80a34bac8a8f203e",
                 filename="Wan2.2_VAE.pth",
+            ),
+        ),
+    )
+
+    register_checkpoint(
+        CheckpointConfig(
+            uuid=uuid4().hex,
+            name="AVAE",
+            s3=CheckpointDirS3(
+                uri="s3://bucket/pretrained/tokenizers/audio/avae",
+            ),
+            hf=CheckpointDirHf(
+                repository="nvidia/Cosmos3-Experimental",
+                revision="c243efd72b3c9138196ba903deb4a0ad26f2bf20",
+                subdirectory="avae",
             ),
         ),
     )
