@@ -55,6 +55,11 @@ def _setup_deterministic_env_and_backends() -> None:
         )
     os.environ["FLASH_ATTENTION_DETERMINISTIC"] = "1"
     # CUBLAS_WORKSPACE_CONFIG must be set before any CUBLAS init, hence script entry.
+    # ":4096:8" is the value recommended by PyTorch's `torch.use_deterministic_algorithms`
+    # docs for CUDA >= 10.2 — without it, deterministic cuBLAS GEMMs raise RuntimeError.
+    # Refs:
+    #   - https://pytorch.org/docs/stable/generated/torch.use_deterministic_algorithms.html
+    #   - https://docs.nvidia.com/cuda/cublas/index.html#results-reproducibility
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
@@ -108,7 +113,16 @@ def _apply_deterministic_config_overrides(config: Config) -> None:
                     n += _walk(item, mutations)
         return n
 
-    dl_overrides = {"num_workers": 0, "prefetch_factor": None, "detshuffle": True}
+    # persistent_workers=False is needed alongside num_workers=0 — PyTorch's
+    # DataLoader rejects (num_workers=0, persistent_workers=True) with
+    # ValueError. Nested dataloaders (e.g. PackingDataLoader → RankPartitionedDataLoader)
+    # pass the kwargs straight to torch.utils.data.DataLoader so they trip on this.
+    dl_overrides = {
+        "num_workers": 0,
+        "prefetch_factor": None,
+        "persistent_workers": False,
+        "detshuffle": True,
+    }
     n_dl = _walk(config.dataloader_train, dl_overrides) + _walk(config.dataloader_val, dl_overrides)
     # Force use_torch_compile=False: Blackwell FMHA must be forced to
     # non-deterministic mode due to an implementation limitation (no deterministic
@@ -131,13 +145,14 @@ def launch(config: Config, args: argparse.Namespace) -> None:
     with distributed_init():
         distributed.init()
 
-    # Check that the config is valid
-    config.validate()
-    # Apply --deterministic config-level overrides before freeze/trainer-init so
-    # trainer.__init__ doesn't undo the script-level backends settings
+    # Apply --deterministic config-level overrides before validate/freeze/trainer-init
+    # so (a) validate inspects the config the trainer will actually consume, and
+    # (b) trainer.__init__ doesn't undo the script-level backends settings
     # (imaginaire/trainer.py:125-126 re-applies cudnn from config).
     if args.deterministic:
         _apply_deterministic_config_overrides(config)
+    # Check that the config is valid
+    config.validate()
     # Freeze the config so developers don't change it during training.
     config.freeze()  # type: ignore
     trainer = config.trainer.type(config)

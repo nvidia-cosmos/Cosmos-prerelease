@@ -21,6 +21,7 @@ import wandb
 from torch.distributed.tensor import DTensor
 from torch.nn.parallel import DistributedDataParallel
 
+from cosmos.utils import log
 from cosmos.utils.callback import Callback
 
 
@@ -110,13 +111,9 @@ def _clip_grad(
         pre-clip per-mesh L2 norm.
 
     """
-    param_set: set[torch.Tensor] = set()
     # Group the parameters by their device meshes.
     parameters_by_mesh: dict[str, list[torch.Tensor]] = defaultdict(list)
     for param in parameters:
-        if param in param_set:
-            continue
-        param_set.add(param)
         if param.grad is None:
             raise ValueError(
                 f"_clip_grad received a parameter with no gradient "
@@ -139,8 +136,9 @@ def _clip_grad(
     per_mesh_norms: dict[str, torch.Tensor] = {}
     per_mesh_norm_list = []
     for mesh, params in parameters_by_mesh.items():
-        grads = [p.grad for p in params if p.grad is not None]
-        assert len(grads) > 0, "No gradients to compute norm"
+        # Every param reached here passed the ``param.grad is None`` check in
+        # the grouping loop above, so this list comprehension is total.
+        grads = [p.grad for p in params]
         mesh_norm = torch.nn.utils.get_total_norm(grads, norm_type, error_if_nonfinite, foreach)
 
         # If mesh_norm is a DTensor, the placements must be
@@ -273,7 +271,8 @@ class GradClip(Callback):
             # VFM: only clip `.net` params, matching legacy semantics + the
             # optimizer's actual param set.
             assert not isinstance(model_ddp, list), "track_per_modality=True expects a single OmniMoTModel, not a list"
-            model_parts = [model_ddp.module if isinstance(model_ddp, DistributedDataParallel) else model_ddp]
+            model = model_ddp.module if isinstance(model_ddp, DistributedDataParallel) else model_ddp
+            model_parts = [model.net]
         else:
             # VLM: list of model parts (or single module). Unwrap DDP per part.
             model_parts = model_ddp if isinstance(model_ddp, list) else [model_ddp]
@@ -318,14 +317,24 @@ class GradClip(Callback):
             cur_state[mesh_str].update(mesh_norm)
         cur_state["global"].update(global_norm)
 
-        # 7. Log every logging_iter.
-        if iteration % self.config.trainer.logging_iter == 0 and wandb.run:
+        # 7. Log every logging_iter.  The reset is intentionally *outside*
+        #    the ``wandb.run`` gate: ``_MagnitudeRecord.get_stat`` is the
+        #    consumer that flushes the windowed accumulator, so coupling it
+        #    to wandb being live would let stats accumulate unboundedly
+        #    whenever wandb is disabled (smoke tests, ``job.wandb_mode=disabled``,
+        #    wandb init failure) and would back-fill any later wandb enablement
+        #    with the entire pre-enable history.
+        if iteration % self.config.trainer.logging_iter == 0:
             log_dict: dict[str, float | int] = {"iteration": iteration}
             for modality, state in self._states.items():
                 for mesh_str, record in state.items():
                     avg = record.get_stat()
                     if self.track_per_modality:
-                        log_dict[f"clip_grad_norm/{modality}/{mesh_str}"] = avg
+                        key = f"clip_grad_norm/{modality}/{mesh_str}"
                     else:
-                        log_dict[f"clip_grad_norm/{mesh_str}"] = avg
-            wandb.log(log_dict, step=iteration)
+                        key = f"clip_grad_norm/{mesh_str}"
+                    log_dict[key] = avg
+                    if mesh_str == "global":
+                        log.info(f"{key}: {avg:.5f} (iteration {iteration})", rank0_only=False)
+            if wandb.run:
+                wandb.log(log_dict, step=iteration)

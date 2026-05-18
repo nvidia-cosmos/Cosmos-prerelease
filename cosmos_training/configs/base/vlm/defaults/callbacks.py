@@ -22,14 +22,16 @@ from hydra.core.config_store import ConfigStore
 from cosmos.callbacks.manual_gc import ManualGarbageCollection
 from cosmos.utils.lazy_config import PLACEHOLDER
 from cosmos.utils.lazy_config import LazyCall as L
-from cosmos.utils.callback import WandBCallback
-from cosmos.callbacks.data_stats import DataStatsCallback
+from cosmos.utils.callback import LowPrecisionCallback, WandBCallback
 from cosmos.callbacks.dataloader_state import DataLoaderStateCallback
-from cosmos.callbacks.dataloading_monitor import DetailedDataLoadingSpeedMonitor
 from cosmos.callbacks.grad_clip import GradClip
 from cosmos.callbacks.hf_export import HFExportCallback
+from cosmos.callbacks.iter_speed import IterSpeed
 from cosmos.callbacks.learning_rate_logger import LearningRateLogger
-from cosmos.callbacks.low_precision import LowPrecisionCallback
+from cosmos.callbacks.log_tensor_shape import LogTensorShapeCallback
+from cosmos.callbacks.param_count import ParamCount
+from cosmos.callbacks.wandb_log import WandbCallback as WandBCallbackMultiplier
+from cosmos.callbacks.wandb_vis import VisualizationLoggingCallback
 from configs.base.defaults.callbacks import JOB_MONITOR_CALLBACKS
 
 # from cosmos.utils.callback import NVTXCallback
@@ -49,10 +51,6 @@ def register_callbacks():
         param_count=L(ParamCount)(  # use model
             save_s3="${upload_reproducible_setup}",
         ),
-        dataloader_speed=L(DetailedDataLoadingSpeedMonitor)(
-            every_n=100,
-            save_s3="${upload_reproducible_setup}",
-        ),
         grad_clip=L(GradClip)(clip_norm=1.0, force_finite=False),  # use model
         learning_rate_logger=L(LearningRateLogger)(every_n=10),
         low_precision=L(LowPrecisionCallback)(
@@ -64,7 +62,7 @@ def register_callbacks():
         # nvtx=L(NVTXCallback)(synchronize=True),
     )
 
-    PER_DATASET_PERN_CALLBACKS = dict(
+    LOG_CALLBACKS = dict(
         wandb_10x=L(WandBCallbackMultiplier)(
             logging_iter_multipler=10,
             save_logging_iter_multipler=1,
@@ -75,34 +73,14 @@ def register_callbacks():
             save_logging_iter_multipler=1,
             save_s3="${upload_reproducible_setup}",
         ),
-        data_stats=L(DataStatsCallback)(
-            logging_iter_multipler=1,
-            save_s3="${upload_reproducible_setup}",
-        ),
-        wandb_val=L(WandBCallbackEval)(
-            save_s3="${upload_reproducible_setup}",
-        ),
-    )
-
-    SIMPLE_LOG_CALLBACKS = dict(
-        wandb_10x=L(WandBCallbackMultiplierSimple)(
-            logging_iter_multipler=10,
-            save_logging_iter_multipler=1,
-            save_s3="${upload_reproducible_setup}",
-        ),
-        wandb_2x=L(WandBCallbackMultiplierSimple)(
-            logging_iter_multipler=2,
-            save_logging_iter_multipler=1,
-            save_s3="${upload_reproducible_setup}",
-        ),
         log_tensor_shape=L(LogTensorShapeCallback)(num_log=10),
         dataloader_state=L(DataLoaderStateCallback)(
             distributor_type="${data_setting.distributor_type}",
         ),
     )
+
     cs.store(group="callbacks", package="trainer.callbacks", name="basic_vlm", node=BASIC_CALLBACKS)
-    cs.store(group="callbacks", package="trainer.callbacks", name="per_dataset", node=PER_DATASET_PERN_CALLBACKS)
-    cs.store(group="callbacks", package="trainer.callbacks", name="simple_log", node=SIMPLE_LOG_CALLBACKS)
+    cs.store(group="callbacks", package="trainer.callbacks", name="basic_log", node=LOG_CALLBACKS)
     cs.store(group="callbacks", package="trainer.callbacks", name="job_monitor", node=JOB_MONITOR_CALLBACKS)
 
     DATA_VIS_CALLBACKS_QWEN = dict(

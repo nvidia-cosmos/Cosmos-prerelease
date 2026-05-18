@@ -120,7 +120,7 @@ def _lazycfg_to_entry(
 def _build_datasets() -> dict[str, DatasetEntry]:
     """Build the viewer dataset registry from ``action_datasets_v1p2``."""
 
-    from experiments.action.midtrain_config.action_datasets_v1p2 import (
+    from configs.base.experiment.action.midtrain_config.action_datasets_v1p2 import (
         DATASET_EMBODIMENT_C_GRIPPER_480,
         DATASET_EMBODIMENT_C_GRIPPER_EXT_480,
         DATASET_AGIBOTWORLD_BETA_480,

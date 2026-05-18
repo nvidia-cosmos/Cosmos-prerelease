@@ -64,8 +64,7 @@ def flash2_supported() -> bool:
         flash2_version_str = flash_attn.__version__
 
     # Version range check disabled to accept whatever flash_attn the OSS
-    # container ships. The mixed_modality_sft_8b smoke runs fine with newer
-    # builds; revisit if regressions appear.
+    # container ships.
     # if not version_in_range(flash2_version_str, FLASH_ATTENTION_V2_MIN_VERSION, FLASH_ATTENTION_V2_MAX_VERSION):
     #     log.debug(
     #         "Flash Attention v2 build is not supported; this backend only supports versions "

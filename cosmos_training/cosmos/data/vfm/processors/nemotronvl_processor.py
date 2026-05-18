@@ -13,20 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 from PIL import Image
-from transformers.models.auto.processing_auto import AutoProcessor
 from transformers.processing_utils import VideosKwargs
 from transformers.video_utils import VideoMetadata
 
 from cosmos.utils import log
-from cosmos.data.vfm.sequence_packing import add_special_tokens
-from cosmos.model.vfm.vlm.qwen3_vl.utils import tokenize_caption
-from cosmos.utils.vfm.vlm.pretrained_models_downloader import maybe_download_hf_model_from_s3
+from cosmos.data.vfm.processors.base import BaseVLMProcessor, convert_string_content_to_list_content
 
 nemotron_chat_template = """
 {%- set ns = namespace(enable_thinking=false, has_sys_prompt=false, non_tool_system_content='', has_video=false, explicit_think_requested=false) -%}
@@ -98,15 +94,15 @@ nemotron_chat_template = """
         {{- ', ' if not loop.last else '' -}}
     {%- endfor -%}
     {{- ']</AVAILABLE_TOOLS>\n\n' -}}
-    
+
     {{- 'If you decide to call any tool(s), use the following format:\n' -}}
     {{- '<TOOLCALL>[{"name": "tool_name1", "arguments": "tool_args1"}, ' -}}
     {{- '{"name": "tool_name2", "arguments": "tool_args2"}]</TOOLCALL>\n\n' -}}
-    
+
     {{- 'The user will execute tool-calls and return responses from tool(s) in this format:\n' -}}
     {{- '<TOOL_RESPONSE>[{"response": "tool_response1"}, ' -}}
     {{- '{"response": "tool_response2"}]</TOOL_RESPONSE>\n\n' -}}
-    
+
     {{- 'Based on the tool responses, you can call additional tools if needed, ' -}}
     {{- 'correct tool calls if any errors are found, or just respond to the user.' -}}
 {%- endif -%}
@@ -199,16 +195,6 @@ nemotron_chat_template = """
 """
 
 
-def convert_string_content_to_list_content(messages: List[Dict]) -> List[Dict]:
-    """
-    Convert the string content to a list of dicts.
-    """
-    for message_id, message in enumerate(messages):
-        if isinstance(message["content"], str):
-            messages[message_id]["content"] = [{"type": "text", "text": message["content"]}]
-    return messages
-
-
 def maybe_parse_vision_content(
     messages: List[Dict],
 ) -> tuple[
@@ -220,17 +206,20 @@ def maybe_parse_vision_content(
     int,
     Optional[list[Image.Image]],
 ]:
-    """
-    Convert the string content to a list of dicts.
+    """Variant of ``maybe_parse_video_content`` that also collects raw frames and images.
+
+    NemotronVL feeds frame arrays / PIL images directly into the processor
+    (rather than letting it re-decode), so we return both metadata and the
+    actual content lists here.
     """
     num_video = 0
-    video_fps = []
-    video_total_num_frames = []
-    video_frames_indices = []
-    video_frames = []
-    images = []
+    video_fps: list[float] = []
+    video_total_num_frames: list[int] = []
+    video_frames_indices: list[list[int]] = []
+    video_frames: list[list] = []
+    images: list[Image.Image] = []
     num_image = 0
-    for message_id, message in enumerate(messages):
+    for message in messages:
         if isinstance(message["content"], list):
             for sub_content in message["content"]:
                 if sub_content.get("type", "") == "video" and isinstance(sub_content["video"], list):
@@ -250,63 +239,39 @@ def maybe_parse_vision_content(
     return num_video, video_fps, video_total_num_frames, video_frames_indices, video_frames, num_image, images
 
 
-def maybe_get_max_pixels_from_images_kwargs(messages: List[Dict]) -> Optional[tuple[int, int]]:
-    """
-    Get the max pixels from the images_kwargs.
-    """
-    for message_id, message in enumerate(messages):
-        if isinstance(message["content"], list):
-            for sub_content in message["content"]:
-                if sub_content.get("type", "") == "image" and sub_content.get("max_pixels", None) is not None:
-                    return sub_content["max_pixels"], sub_content.get("min_pixels", None)
-    return None, None
+class NemotronVLProcessor(
+    BaseVLMProcessor
+):
+    """Wrapper around the HuggingFace ``AutoProcessor`` for NVIDIA-Nemotron-Nano-VL."""
 
-
-class NemotronVLProcessor:
-    # This is a wrapper around the AutoProcessor class to add some helper functions
-    is_unified_processor: bool = True  # sentinel for TextTokenizerTransform duck-type check
+    VISION_END_TOKEN: Optional[str] = "</img>"
 
     def __init__(
         self,
-        name="nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16",
+        name: str = "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16",
         credentials: str = "./credentials/s3_training.secret",
         bucket: str = "checkpoints-us-east-1",
         cache_dir: Optional[str] = None,
     ):
-        self.name = name
-        if os.path.isdir(name):
-            model_name_or_path_local = name
-        else:
-            model_name_or_path_local = maybe_download_hf_model_from_s3(
-                name, credentials, bucket, include_model_weights=False
-            )
-
-        self.processor = AutoProcessor.from_pretrained(model_name_or_path_local, trust_remote_code=True)
-        log.info("Successfully loaded processor from local cache")
-
+        super().__init__(name=name, credentials=credentials, bucket=bucket, cache_dir=cache_dir)
+        # Install the project's chat template on the tokenizer.
         self.processor.tokenizer.chat_template = nemotron_chat_template
-        add_special_tokens(self.processor.tokenizer)
-        if hasattr(self.processor, "image_token"):
-            self.image_token_id = self.processor.tokenizer.convert_tokens_to_ids(self.processor.image_token)
-        else:
-            self.image_token_id = None
-        if hasattr(self.processor, "video_token"):
-            self.video_token_id = self.processor.tokenizer.convert_tokens_to_ids(self.processor.video_token)
-        else:
-            self.video_token_id = None
-        self.eos_id = self.processor.tokenizer.eos_token_id
-        self.pad_id = self.processor.tokenizer.convert_tokens_to_ids(
-            "<SPECIAL_999>"
-        )
-        self.vision_end_id = self.processor.tokenizer.convert_tokens_to_ids("</img>")
 
-        # Helper attributes for the dataloader video decoding function
-        self.shortest_edge = 512  # HACK (xuali): hardcoded based on the model config
-        self.min_height_width = 512  # HACK (xuali): hardcoded based on the model config
-        self.patch_size = 16  # HACK (xuali): hardcoded based on the model config
+        # NemotronVL hardcodes these helper attributes because they are not
+        # discoverable from the HF model config; the values match the upstream
+        # vision-encoder configuration.
+        # HACK (xuali): hardcoded based on the model config.
+        self.min_height_width = 512
+        self.patch_size = 16
         self.temporal_patch_size = 1
         self.merge_size = 1
         self.use_smart_resize = False
+
+    def _resolve_pad_id(self):
+        # NemotronVL's tokenizer does not specify a pad_token; reserve
+        # <SPECIAL_999> for padding (project convention).
+
+        return self.processor.tokenizer.convert_tokens_to_ids("<SPECIAL_999>")
 
     def apply_chat_template(
         self,
@@ -331,7 +296,7 @@ class NemotronVLProcessor:
         messages = convert_string_content_to_list_content(messages)
 
         has_thinking = False
-        for message_id, message in enumerate(messages):
+        for message in messages:
             if message["role"] == "assistant":
                 for content in message["content"]:
                     if content.get("type", "") == "text":
@@ -356,7 +321,6 @@ class NemotronVLProcessor:
             assert num_video == 1, "only support one video for now"
             fps = video_fps[0]
             total_num_frames = video_total_num_frames[0]
-            frames_indices = video_frames_indices[0]
             inputs = self.processor(
                 text=[prompt],
                 videos=video_frames,
@@ -376,7 +340,6 @@ class NemotronVLProcessor:
             )
 
         # Convert batch features into single features
-        # By default, the processor returns a batch of features, but we use processor in dataloader, so we need to convert it to single features
         inputs["input_ids"] = inputs["input_ids"][0]  # [N_token]
         inputs["attention_mask"] = inputs["attention_mask"][0]  # [N_token]
         return inputs
@@ -435,75 +398,10 @@ class NemotronVLProcessor:
         else:
             return masks.tolist()
 
-    def tokenize_text(
-        self,
-        caption: str,
-        is_video: bool = False,
-        use_system_prompt: bool = False,
-        system_prompt: Optional[str] = None,
-    ) -> list[int]:
-        """Tokenize a text caption using the underlying tokenizer.
-
-        Delegates to tokenize_caption so VFM diffusion augmentors and VLM dataloaders
-        share the same tokenization logic through a single processor object.
-        """
-        return tokenize_caption(
-            caption,
-            self.processor.tokenizer,
-            is_video=is_video,
-            use_system_prompt=use_system_prompt,
-            system_prompt=system_prompt,
-        )
-
-    def encode(self, *args, **kwargs):
-        return self.processor.tokenizer.encode(*args, **kwargs)
-
-    def decode(self, *args, **kwargs):
-        return self.processor.tokenizer.decode(*args, **kwargs)
-
 
 if __name__ == "__main__":
     """
-    PYTHONPATH=. python3 cosmos/data/vlm/processors/nemotronvl_processor.py
-
-    inputs: dict_keys(['input_ids', 'attention_mask', 'pixel_values', 'image_sizes', 'text'])
-        input_ids: type: <class 'torch.Tensor'> shape: torch.Size([6699])
-        attention_mask: type: <class 'torch.Tensor'> shape: torch.Size([6699])
-        pixel_values: type: <class 'torch.Tensor'> shape: torch.Size([26, 3, 224, 224])
-        image_sizes: type: <class 'torch.Tensor'> shape: torch.Size([2, 2])
-        text: type: <class 'str'>
-
-    For image, expected output:
-        input_ids: type: <class 'torch.Tensor'>
-        shape: torch.Size([2772])
-        attention_mask: type: <class 'torch.Tensor'>
-        shape: torch.Size([2772])
-        pixel_values: type: <class 'torch.Tensor'>
-        shape: torch.Size([11008, 1536])
-        image_grid_thw: type: <class 'torch.Tensor'>
-        shape: torch.Size([1, 3])
-        image_grid_thw: tensor([[  1,  86, 128]])
-        num_image_token_id_tokens: 2752
-        num_video_token_id_tokens: 0
-        assistant_tokens_mask: 2
-        assistant_tokens: tensor([ 59604, 151645])
-        decoded_assistant_tokens: Paris<|im_end|>
-
-    For video, expected output:
-        input_ids: type: <class 'torch.Tensor'>
-        shape: torch.Size([5538])
-        attention_mask: type: <class 'torch.Tensor'>
-        shape: torch.Size([5538])
-        pixel_values_videos: type: <class 'torch.Tensor'>
-        shape: torch.Size([22016, 1536])
-        video_grid_thw: type: <class 'torch.Tensor'>
-        shape: torch.Size([1, 3])
-        video_grid_thw: tensor([[  2,  86, 128]])
-        num_image_token_id_tokens: 0
-        num_video_token_id_tokens: 5504
-        assistant_tokens_mask: 2
-        assistant_tokens: tensor([ 59604, 151645])
-        decoded_assistant_tokens: Paris<|im_end|>
+    PYTHONPATH=. python3 cosmos/data/vfm/processors/nemotronvl_processor.py
     """
     processor = NemotronVLProcessor("nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16")
     from io import BytesIO
@@ -520,11 +418,7 @@ if __name__ == "__main__":
         {
             "role": "user",
             "content": [
-                {
-                    "type": "video",
-                    "video": [img],
-                    "fps": 12,
-                },
+                {"type": "video", "video": [img], "fps": 12},
                 {"type": "text", "text": "Describe what you see."},
             ],
         },

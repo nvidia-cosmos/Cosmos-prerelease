@@ -19,12 +19,6 @@ from cosmos.utils.config_helper import import_all_modules_from_package
 from configs.base.vlm.defaults.callbacks import register_callbacks
 from configs.base.vlm.defaults.checkpointer import register_checkpoint, register_ckpt_type
 from configs.base.vlm.defaults.config import Config
-from configs.base.vlm.defaults.dataloader import register_data_debug
-from configs.base.vlm.defaults.dataloader_weighted_url import (
-    register_data_recipe,
-    register_data_weighted_url,
-    register_data_weighted_url_with_text,
-)
 from configs.base.vlm.defaults.model import register_model
 from configs.base.vlm.defaults.optimizer import register_optimizer, register_scheduler
 from configs.base.vlm.defaults.vlm_policy import register_vlm_policy
@@ -59,15 +53,11 @@ def make_config() -> Config:
     register_model()
     register_vlm_policy()
     # Register dataloader configs
-    register_data_weighted_url()
-    register_data_recipe()
-    register_data_weighted_url_with_text()
-    register_data_debug()
     log.info("Registering optimizer, scheduler, checkpoint, ckpt type, and callbacks")
     register_optimizer()
     register_scheduler()
     register_checkpoint()
     register_ckpt_type()
     register_callbacks()
-    import_all_modules_from_package("experiments.vlm", reload=True)
+    import_all_modules_from_package("configs.base.vlm.experiment", reload=True)
     return c

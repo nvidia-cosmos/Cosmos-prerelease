@@ -20,7 +20,7 @@ from hydra.core.config_store import ConfigStore
 from cosmos.callbacks.manual_gc import ManualGarbageCollection
 from cosmos.utils.lazy_config import PLACEHOLDER
 from cosmos.utils.lazy_config import LazyCall as L
-from cosmos.utils.callback import WandBCallback
+from cosmos.utils.callback import LowPrecisionCallback, WandBCallback
 from cosmos.callbacks.compile_tokenizer import CompileTokenizer
 from cosmos.callbacks.device_monitor import DeviceMonitor
 from cosmos.callbacks.every_n_draw_sample import EveryNDrawSample
@@ -29,7 +29,6 @@ from cosmos.callbacks.grad_clip import GradClip
 from cosmos.callbacks.heart_beat import HeartBeat
 from cosmos.callbacks.iter_speed import IterSpeed
 from cosmos.callbacks.load_pretrained import LoadPretrained
-from cosmos.callbacks.low_precision import LowPrecisionCallback
 from cosmos.callbacks.mfu import MFUCallback
 from cosmos.callbacks.moe_specialization_callback import MoESpecializationCallback
 from cosmos.callbacks.moe_stability_callback import MoEStabilityCallback

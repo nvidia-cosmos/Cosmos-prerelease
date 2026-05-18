@@ -29,7 +29,7 @@ import attrs
 class ParallelismConfig:
     # Activation checkpointing is used to reduce the memory usage of the model.
     # The outputs of each layer are checkpointed, the intermediate results are not saved.
-    use_activation_checkpointing: bool = False
+    use_activation_checkpointing: bool = True
 
     # Torch compile is used to compile the model for faster training.
     use_torch_compile: bool = False

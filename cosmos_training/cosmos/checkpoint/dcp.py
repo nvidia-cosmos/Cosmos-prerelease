@@ -573,12 +573,6 @@ class DistributedCheckpointer(AbstractCheckpointer):
                 elif key == "scheduler":
                     log.info("- Loading the scheduler...")
                     _state_dict = scheduler.state_dict()
-                    # Older checkpoints pre-date _is_initial in PyTorch's LRScheduler.
-                    # Strip it from the state dict so DCP doesn't look for a key that
-                    # doesn't exist in the file; the scheduler reinitializes it to False.
-                    ckpt_keys = set(storage_reader.read_metadata().state_dict_metadata.keys())
-                    if "_is_initial" not in ckpt_keys:
-                        _state_dict.pop("_is_initial", None)
                     dcp.load(
                         _state_dict,
                         storage_reader=storage_reader,

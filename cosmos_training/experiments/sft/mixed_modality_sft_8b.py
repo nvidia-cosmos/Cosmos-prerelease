@@ -195,26 +195,30 @@ mixed_modality_sft_8b = LazyDict(
                     use_dynamic_shifting=False,
                 ),
                 # VLM backbone (Qwen3-VL-8B Instruct)
+                # Schema unified by the v12 + dingm merge (commit 63161d8b80):
+                # checkpoint_path / credential_path / load_pretrained etc. are
+                # now nested under pretrained_weights: PretrainedWeightsConfig.
+                # qk_norm_for_{diffusion,text} collapsed to a single qk_norm.
+                # vlm_checkpoint_format → pretrained_weights.checkpoint_format.
                 vlm_config=dict(
-                    checkpoint_path="s3://bucket/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-8B-Instruct/",
-                    credential_path="credentials/gcp_checkpoint.secret",
-                    enable_gcs_patch_in_boto3=True,
-                    layer_module="Qwen2MoTDecoderLayer",
-                    load_pretrained=False,
                     model_name="Qwen/Qwen3-VL-8B-Instruct",
-                    qk_norm_for_diffusion=True,
-                    qk_norm_for_text=False,
+                    layer_module="Qwen2MoTDecoderLayer",
+                    qk_norm=True,
                     tie_word_embeddings=False,
                     use_system_prompt=False,
-                    vlm_checkpoint_format=None,
+                    pretrained_weights=dict(
+                        enabled=False,
+                        backbone_path="s3://bucket/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-8B-Instruct/",
+                        credentials_path="credentials/gcp_checkpoint.secret",
+                        enable_gcs_patch_in_boto3=True,
+                        checkpoint_format=None,
+                    ),
                     # Use the create_qwen2_tokenizer_with_download path with
                     # config_variant="hf" so the tokenizer is fetched from
-                    # HuggingFace (no GCP/S3 credentials needed). NOTE:
-                    # OmegaConf merges this dict with the preset's tokenizer
-                    # block, so any extra kwargs in the preset (e.g.
-                    # tokenizer_type) leak through and get passed to this
-                    # function — see configs/base/defaults/vlm.py where the
-                    # function signature now accepts **kwargs.
+                    # HuggingFace (no GCP/S3 credentials needed). OmegaConf
+                    # merges this dict with the preset's tokenizer block; extra
+                    # kwargs (e.g. tokenizer_type) leak through and get
+                    # absorbed by the **_unused_kwargs added in vlm.py.
                     tokenizer=L(create_qwen2_tokenizer_with_download)(
                         pretrained_model_name="Qwen/Qwen3-VL-8B-Instruct",
                         config_variant="hf",

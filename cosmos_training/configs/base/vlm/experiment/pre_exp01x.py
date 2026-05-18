@@ -37,7 +37,7 @@ pre_exp010_000_eagle_er_1p7b_joint_reasoner_tl_722_5vs5_no_predict2_s3_webloader
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "eagle_er_1p7b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -59,7 +59,7 @@ pre_exp010_010_internvl3_5_1b_joint_reasoner_tl_722_5vs5_no_predict2_s3_webloade
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "internvl3_5_1b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -80,7 +80,7 @@ pre_exp010_020_internvl3_5_2b_joint_reasoner_tl_722_5vs5_no_predict2_s3_webloade
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "internvl3_5_2b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -105,7 +105,7 @@ pre_exp011_000_qwen3_vl_2b = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_2b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -131,7 +131,7 @@ pre_exp011_020_qwen3_vl_2b_vit2k8k = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_2b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -142,10 +142,8 @@ pre_exp011_020_qwen3_vl_2b_vit2k8k = LazyDict(
             max_iter=8000,
         ),
         optimizer=dict(
-            config=dict(
-                lr=5e-5,
-                fused=True,
-            ),
+            lr=5e-5,
+            fused=True,
         ),
         model=dict(
             config=dict(
@@ -176,7 +174,7 @@ pre_exp011_030_qwen3_vl_2b_vit2k8k_mbs8 = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_2b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -187,10 +185,8 @@ pre_exp011_030_qwen3_vl_2b_vit2k8k_mbs8 = LazyDict(
             max_iter=200_000,
         ),
         optimizer=dict(
-            config=dict(
-                lr=5e-5,
-                fused=True,
-            ),
+            lr=5e-5,
+            fused=True,
         ),
         data_setting=dict(
             qwen_max_video_token_length=8192,
@@ -225,7 +221,7 @@ pre_exp011_040_qwen3_vl_2b_vit2k8k_mbs8_flop3s = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_2b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -236,10 +232,8 @@ pre_exp011_040_qwen3_vl_2b_vit2k8k_mbs8_flop3s = LazyDict(
             max_iter=200_000,
         ),
         optimizer=dict(
-            config=dict(
-                lr=5e-5,
-                fused=True,
-            ),
+            lr=5e-5,
+            fused=True,
         ),
         data_setting=dict(
             qwen_max_video_token_length=8192,
@@ -273,7 +267,7 @@ pre_exp011_041_qwen3_vl_2b_vit2k8k_mbs8_flop3s_mix_text_only = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_2b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -284,10 +278,8 @@ pre_exp011_041_qwen3_vl_2b_vit2k8k_mbs8_flop3s_mix_text_only = LazyDict(
             max_iter=200_000,
         ),
         optimizer=dict(
-            config=dict(
-                lr=5e-5,
-                fused=True,
-            ),
+            lr=5e-5,
+            fused=True,
         ),
         data_setting=dict(
             qwen_max_video_token_length=8192,
@@ -334,20 +326,26 @@ pre_exp011_100_qwen3_vl_2b_align = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_2b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
             group="debug",
         ),
-        optimizer=dict(
+        model=dict(
             config=dict(
-                freeze_vision_encoder=True,
-                freeze_llm=True,
-                lr=1e-5,
-                init_lr=1e-7,
-                end_lr=5e-6,
+                freeze=dict(
+                    freeze_vision_encoder=True,
+                    freeze_llm=True,
+                ),
             ),
+        ),
+        optimizer=dict(
+            lr=1e-5,
+        ),
+        scheduler=dict(
+            f_start=[0.01],
+            f_min=[0.5],
         ),
         trainer=dict(
             callbacks=dict(log_tensor_shape=dict(num_log=2)),
@@ -366,20 +364,18 @@ pre_exp011_300_internvl3_5_2b_reinit_align = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "internvl3_5_2b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
             group="debug",
         ),
         optimizer=dict(
-            config=dict(
-                freeze_vision_encoder=True,
-                freeze_llm=True,
-                lr=1e-5,
-                init_lr=1e-7,
-                end_lr=5e-6,
-            ),
+            lr=1e-5,
+        ),
+        scheduler=dict(
+            f_start=[0.01],
+            f_min=[0.5],
         ),
         trainer=dict(
             callbacks=dict(log_tensor_shape=dict(num_log=2)),
@@ -387,8 +383,14 @@ pre_exp011_300_internvl3_5_2b_reinit_align = LazyDict(
         ),
         model=dict(
             config=dict(
+                freeze=dict(
+                    freeze_vision_encoder=True,
+                    freeze_llm=True,
+                ),
                 policy=dict(
-                    model_name_or_path="OpenGVLab/InternVL3_5-2B-HF-ReinitLLMProj",
+                    backbone=dict(
+                        model_name="OpenGVLab/InternVL3_5-2B-HF-ReinitLLMProj",
+                    ),
                 ),
             ),
         ),
@@ -406,7 +408,7 @@ pre_exp011_400_internvl3_5_2b_reinit_e2e = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "internvl3_5_2b"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -419,7 +421,9 @@ pre_exp011_400_internvl3_5_2b_reinit_e2e = LazyDict(
         model=dict(
             config=dict(
                 policy=dict(
-                    model_name_or_path="OpenGVLab/InternVL3_5-2B-HF-ReinitLLMProj",
+                    backbone=dict(
+                        model_name="OpenGVLab/InternVL3_5-2B-HF-ReinitLLMProj",
+                    ),
                 ),
             ),
         ),
@@ -439,7 +443,7 @@ pre_exp015_000_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s = LazyDict(
             {"override /data_val": "dummy_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_8b_instruct"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -450,10 +454,8 @@ pre_exp015_000_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s = LazyDict(
             max_iter=8000,
         ),
         optimizer=dict(
-            config=dict(
-                lr=1e-5,
-                fused=True,
-            ),
+            lr=1e-5,
+            fused=True,
         ),
         data_setting=dict(
             qwen_max_video_token_length=8192,
@@ -490,7 +492,7 @@ pre_exp015_001_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s_mix_text_only = LazyDict
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_8b_instruct"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -501,10 +503,8 @@ pre_exp015_001_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s_mix_text_only = LazyDict
             max_iter=10000,
         ),
         optimizer=dict(
-            config=dict(
-                lr=1e-5,
-                fused=True,
-            ),
+            lr=1e-5,
+            fused=True,
         ),
         data_setting=dict(
             qwen_max_video_token_length=8192,
@@ -554,7 +554,7 @@ pre_exp016_000_qwen3_vl_8b_thinking_vit2k8k_mbs1_flop3s = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_8b_thinking"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -565,10 +565,8 @@ pre_exp016_000_qwen3_vl_8b_thinking_vit2k8k_mbs1_flop3s = LazyDict(
             max_iter=8000,
         ),
         optimizer=dict(
-            config=dict(
-                lr=1e-5,
-                fused=True,
-            ),
+            lr=1e-5,
+            fused=True,
         ),
         data_setting=dict(
             qwen_max_video_token_length=8192,
@@ -606,7 +604,7 @@ pre_exp017_000_nemotron_vl_12b_mbs1 = LazyDict(
             {"override /data_val": "debug_image_data_qwen"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "nemotron_nano_12b_v2_vl_bf16"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -617,10 +615,8 @@ pre_exp017_000_nemotron_vl_12b_mbs1 = LazyDict(
             max_iter=8000,
         ),
         optimizer=dict(
-            config=dict(
-                lr=1e-5,
-                fused=True,
-            ),
+            lr=1e-5,
+            fused=True,
         ),
         data_setting=dict(
             max_tokens=16000,
@@ -651,7 +647,7 @@ pre_exp018_000_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s_pretrain = LazyDict(
             {"override /data_val": "200_nanov2_stage_1_0218_34m_uniform_pretrain_repeat_s3_vlmdb"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_8b_instruct"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -665,17 +661,13 @@ pre_exp018_000_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s_pretrain = LazyDict(
             max_val_iter=1,
         ),
         optimizer=dict(
-            config=dict(
-                lr=2e-5,
-                fused=True,
-                weight_decay=0.05,
-                betas=[0.9, 0.999],
-                freeze_vision_encoder=True,
-                freeze_mm_projector=True,
-            ),
+            lr=2e-5,
+            fused=True,
+            weight_decay=0.05,
+            betas=[0.9, 0.999],
         ),
         scheduler=dict(
-            warmup_iters=6000,
+            warm_up_steps=[6000],
         ),
         data_setting=dict(
             qwen_max_video_token_length=8192,
@@ -688,13 +680,21 @@ pre_exp018_000_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s_pretrain = LazyDict(
         ),
         model=dict(
             config=dict(
+                freeze=dict(
+                    freeze_vision_encoder=True,
+                    freeze_mm_projector=True,
+                ),
                 policy=dict(
                     parallelism=dict(
                         data_parallel_shard_degree=8,
                         data_parallel_replicate_degree=-1,
                     ),
                     monkey_patch_for_text_only_data=True,
-                    pretrain_weights_path_llm="Qwen/Qwen3-8B",
+                    backbone=dict(
+                        pretrained_weights=dict(
+                            backbone_path="Qwen/Qwen3-8B",
+                        ),
+                    ),
                 ),
             ),
         ),
@@ -719,7 +719,7 @@ pre_exp019_000_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s_posttrain = LazyDict(
             {"override /data_val": "201_nanov2_stage_1_0218_34m_uniform_posttrain_repeat_s3_vlmdb"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_8b_instruct"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -733,17 +733,13 @@ pre_exp019_000_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s_posttrain = LazyDict(
             max_val_iter=1,
         ),
         optimizer=dict(
-            config=dict(
-                lr=1e-5,
-                fused=True,
-                weight_decay=0.05,
-                betas=[0.9, 0.999],
-                freeze_vision_encoder=True,
-                freeze_mm_projector=True,
-            ),
+            lr=1e-5,
+            fused=True,
+            weight_decay=0.05,
+            betas=[0.9, 0.999],
         ),
         scheduler=dict(
-            warmup_iters=800,
+            warm_up_steps=[800],
         ),
         data_setting=dict(
             qwen_max_video_token_length=8192,
@@ -756,6 +752,10 @@ pre_exp019_000_qwen3_vl_8b_instruct_vit2k8k_mbs1_flop3s_posttrain = LazyDict(
         ),
         model=dict(
             config=dict(
+                freeze=dict(
+                    freeze_vision_encoder=True,
+                    freeze_mm_projector=True,
+                ),
                 policy=dict(
                     parallelism=dict(
                         data_parallel_shard_degree=8,
@@ -785,7 +785,7 @@ pre_exp020_001_qwen3_vl_30b_a3b_instruct_ep = LazyDict(
             {"override /data_val": "nemotron_nanov2_stage_1_0218_34m_uniform_pretrain_s3_vlmdb_recipe"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_30b_a3b_instruct"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(group="debug"),
@@ -793,7 +793,7 @@ pre_exp020_001_qwen3_vl_30b_a3b_instruct_ep = LazyDict(
             max_iter=8000,
             logging_iter=1,
         ),
-        optimizer=dict(config=dict(lr=5e-5, fused=True)),
+        optimizer=dict(lr=5e-5, fused=True),
         data_setting=dict(
             qwen_max_video_token_length=8192,
             qwen_max_image_token_length=2048,

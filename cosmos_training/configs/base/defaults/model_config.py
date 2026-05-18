@@ -24,6 +24,7 @@ from configs.base.defaults.ema import EMAConfig
 from configs.base.defaults.parallelism import ParallelismConfig
 from configs.base.defaults.vlm import VLMConfig
 from configs.base.vlm.defaults.training import PolicyConfig, TrainConfig
+from configs.base.vlm.freeze_config import VLMFreezeConfig
 
 
 @attrs.define(slots=False)
@@ -325,7 +326,10 @@ class OmniMoTModelConfig(ModelConfig):
         #    pathway has already been pretrained using the previous model weights, for example,
         #    the Qwen3-VL weights). But the understanding weights are always kept unchanged.
 
-        if not self.vlm_config.load_pretrained and not self.diffusion_expert_config.load_weights_from_pretrained:
+        if (
+            not self.vlm_config.pretrained_weights.enabled
+            and not self.diffusion_expert_config.load_weights_from_pretrained
+        ):
             # Neither if branch below is taken; no need to create checkpointer.
             return
 
@@ -333,13 +337,13 @@ class OmniMoTModelConfig(ModelConfig):
             root_config.checkpoint, root_config.job, callbacks=None, disable_async=True
         )
 
-        if self.vlm_config.load_pretrained:
+        if self.vlm_config.pretrained_weights.enabled:
             if checkpointer._read_latest_checkpoint_file() is not None:
                 log.info(
                     "Checkpoint found: disabling pretrained model loading to avoid double loading. "
                     "Model weights will be loaded from checkpoint instead of safetensors."
                 )
-                root_config.model.config.vlm_config.load_pretrained = False
+                root_config.model.config.vlm_config.pretrained_weights.enabled = False
 
             if self.diffusion_expert_config.load_weights_from_pretrained:
                 if checkpointer.load_path is not None:
@@ -358,3 +362,5 @@ class VLMModelConfig(ModelConfig):
 
     policy: PolicyConfig = PolicyConfig()
     train: TrainConfig = TrainConfig()
+    # Applied at model construction, before the optimizer is built.
+    freeze: VLMFreezeConfig = VLMFreezeConfig()

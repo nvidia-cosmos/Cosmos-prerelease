@@ -45,6 +45,8 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
+from cosmos.utils.vfm.vlm.constant import IGNORE_INDEX
+
 
 def cross_entropy_loss(
     logits: torch.Tensor,
@@ -52,7 +54,7 @@ def cross_entropy_loss(
     loss_scaling_factor: float = 1.0,
     dp_group: Optional[dist.ProcessGroup] = None,
     cp_group: Optional[dist.ProcessGroup] = None,
-    ignore_index: int = -100,
+    ignore_index: int = IGNORE_INDEX,
 ) -> torch.Tensor:
     """Next-token-prediction CE loss with DP/CP group reduction.
 
@@ -68,7 +70,7 @@ def cross_entropy_loss(
                   None = no DP reduction (single-GPU or replicate-only).
         cp_group: Context-parallel group. If size > 1, use per-rank mean.
                   None = no CP reduction.
-        ignore_index: label value to exclude (default -100).
+        ignore_index: label value to exclude (defaults to ``IGNORE_INDEX``, -100).
 
     Returns:
         Scalar loss tensor.

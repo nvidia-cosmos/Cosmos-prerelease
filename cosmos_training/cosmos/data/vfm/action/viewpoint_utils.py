@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from imaginaire.datasets.webdataset.augmentors.augmentor import Augmentor
+from cosmos.data.imaginaire.webdataset.augmentors.augmentor import Augmentor
 from cosmos.utils import log
 
 Viewpoint = Literal["ego_view", "third_person_view", "wrist_view", "concat_view"]

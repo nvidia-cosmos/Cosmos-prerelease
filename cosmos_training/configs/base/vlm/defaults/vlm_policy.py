@@ -15,59 +15,56 @@
 
 from hydra.core.config_store import ConfigStore
 
+from configs.base.defaults.vlm import VLMConfig
 from configs.base.vlm.defaults.training import PolicyConfig
 
 # Each entry replaces cfg.model.config.policy via package="model.config.policy".
 # Sibling to the VFM vlm_config group at
-# configs/base/defaults/vlm.py: that group binds
-# VLMConfig SKUs onto OmniMoTModelConfig.vlm_config; this group binds
-# PolicyConfig SKUs onto VLMModelConfig.policy. The two schemas are kept
-# separate today because the loader contracts diverge (VFM uses a
-# registry-label + LazyDict model_instance with MoTDecoderLayer
-# substitution; VLM uses a literal HF cache path fed to from_pretrained).
-# Convergence onto a single SKU schema is tracked as L6 in
-# config_unification_plan.v10.md.
+# configs/base/defaults/vlm.py: that group binds VLMConfig
+# SKUs onto OmniMoTModelConfig.vlm_config; this group binds PolicyConfig SKUs
+# onto VLMModelConfig.policy. Both groups compose the same VLMConfig: VFM as
+# vlm_config: VLMConfig, VLM as policy.backbone: VLMConfig.
 
-qwen2_5_vl_7b = PolicyConfig(model_name_or_path="Qwen/Qwen2.5-VL-7B-Instruct")
+qwen2_5_vl_7b = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen2.5-VL-7B-Instruct"))
 
 eagle_er_1p7b = PolicyConfig(
-    model_name_or_path="eagle_er_qwen3_1p7b_siglip_400m",
+    backbone=VLMConfig(model_name="eagle_er_qwen3_1p7b_siglip_400m"),
     model_max_length=16000,
 )
 
 internvl3_5_1b = PolicyConfig(
-    model_name_or_path="OpenGVLab/InternVL3_5-1B-HF",
+    backbone=VLMConfig(model_name="OpenGVLab/InternVL3_5-1B-HF"),
     model_max_length=16000,  # 40960 is the max length by default.
 )
 
 internvl3_5_2b = PolicyConfig(
-    model_name_or_path="OpenGVLab/InternVL3_5-2B-HF",
+    backbone=VLMConfig(model_name="OpenGVLab/InternVL3_5-2B-HF"),
     model_max_length=16000,  # 40960 is the max length by default.
 )
 
-qwen3_vl_2b = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-2B-Init")
+qwen3_vl_2b = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-2B-Init"))
 
-qwen3_vl_30b_a3b_instruct = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-30B-A3B-Instruct")
+qwen3_vl_30b_a3b_instruct = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-30B-A3B-Instruct"))
 
-qwen3_vl_30b_a3b_thinking = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-30B-A3B-Thinking")
+qwen3_vl_30b_a3b_thinking = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-30B-A3B-Thinking"))
 
-qwen3_vl_235b_a22b_thinking = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-235B-A22B-Thinking")
+qwen3_vl_235b_a22b_thinking = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-235B-A22B-Thinking"))
 
-qwen3_vl_8b_thinking = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-8B-Thinking")
+qwen3_vl_8b_thinking = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-8B-Thinking"))
 
-qwen3_vl_8b_instruct = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-8B-Instruct")
+qwen3_vl_8b_instruct = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-8B-Instruct"))
 
-qwen3_vl_2b_instruct = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-2B-Instruct")
+qwen3_vl_2b_instruct = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-2B-Instruct"))
 
-qwen3_vl_2b_thinking = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-2B-Thinking")
+qwen3_vl_2b_thinking = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-2B-Thinking"))
 
-qwen3_vl_4b_instruct = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-4B-Instruct")
+qwen3_vl_4b_instruct = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-4B-Instruct"))
 
-qwen3_vl_4b_thinking = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-4B-Thinking")
+qwen3_vl_4b_thinking = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-4B-Thinking"))
 
-qwen3_vl_32b_instruct = PolicyConfig(model_name_or_path="Qwen/Qwen3-VL-32B-Instruct")
+qwen3_vl_32b_instruct = PolicyConfig(backbone=VLMConfig(model_name="Qwen/Qwen3-VL-32B-Instruct"))
 
-nemotron_nano_12b_v2_vl_bf16 = PolicyConfig(model_name_or_path="nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16")
+nemotron_nano_12b_v2_vl_bf16 = PolicyConfig(backbone=VLMConfig(model_name="nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16"))
 
 
 def register_vlm_policy():

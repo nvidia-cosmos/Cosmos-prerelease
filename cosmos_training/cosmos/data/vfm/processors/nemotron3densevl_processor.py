@@ -13,101 +13,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-from typing import Dict, List, Optional
+from typing import Optional
 
 import numpy as np
 import torch
 from PIL import Image
 from qwen_vl_utils.vision_process import smart_resize
-from transformers.models.auto.processing_auto import AutoProcessor
 
-from cosmos.utils import log
-from cosmos.data.vfm.sequence_packing import add_special_tokens
-from cosmos.model.vfm.vlm.qwen3_vl.utils import tokenize_caption
-from cosmos.utils.vfm.vlm.pretrained_models_downloader import maybe_download_hf_model_from_s3
-
-
-def convert_string_content_to_list_content(messages: List[Dict]) -> List[Dict]:
-    """
-    Convert the string content to a list of dicts.
-    """
-    for message_id, message in enumerate(messages):
-        if isinstance(message["content"], str):
-            messages[message_id]["content"] = [{"type": "text", "text": message["content"]}]
-    return messages
+from cosmos.data.vfm.processors.base import (
+    BaseVLMProcessor,
+    convert_string_content_to_list_content,
+    maybe_parse_video_content,
+)
 
 
-def maybe_parse_video_content(
-    messages: List[Dict],
-) -> tuple[int, Optional[list[float]], Optional[list[int]], Optional[list[list[int]]]]:
-    """
-    Convert the string content to a list of dicts.
-    """
-    num_video = 0
-    video_fps = []
-    video_total_num_frames = []
-    video_frames_indices = []
-    for message_id, message in enumerate(messages):
-        if isinstance(message["content"], list):
-            for sub_content in message["content"]:
-                if sub_content.get("type", "") == "video" and isinstance(sub_content["video"], list):
-                    num_video += 1
-                    fps = sub_content.get("fps", None)
-                    if fps is None:
-                        log.critical(
-                            f"fps is None for video {sub_content}. Better to set the fps explicitly", rank0_only=False
-                        )
-                    video_fps.append(fps)
-                    video_total_num_frames.append(len(sub_content["video"]))
-                    video_frames_indices.append(list(range(video_total_num_frames[-1])))
-    return num_video, video_fps, video_total_num_frames, video_frames_indices
+class Nemotron3DenseVLProcessor(
+    BaseVLMProcessor
+):
+    """Wrapper around the HuggingFace ``AutoProcessor`` for Nemotron3-Dense-VL / Qwen3-2B-ViT."""
 
-
-class Nemotron3DenseVLProcessor:
-    # This is a wrapper around the AutoProcessor class to add some helper functions
-    is_unified_processor: bool = True  # sentinel for TextTokenizerTransform duck-type check
+    # Nemotron3-Dense / Qwen3-2B-ViT does not expose a single vision-end token;
+    # leave ``vision_end_id`` unset (None) rather than the legacy ``</img>``
+    # which silently resolved to the UNK token id.
+    VISION_END_TOKEN: Optional[str] = None
 
     def __init__(
         self,
-        name="Qwen/Qwen3-VL-2B-Init",
+        name: str = "Qwen/Qwen3-VL-2B-Init",
         credentials: str = "./credentials/s3_training.secret",
         bucket: str = "checkpoints-us-east-1",
-        cache_dir: str = None,
+        cache_dir: Optional[str] = None,
     ):
-        self.name = name
-        if os.path.isdir(name):
-            model_name_or_path_local = name
-        else:
-            model_name_or_path_local = maybe_download_hf_model_from_s3(
-                name, credentials, bucket, include_model_weights=False
-            )
-
-        self.processor = AutoProcessor.from_pretrained(model_name_or_path_local, trust_remote_code=True)
-        log.info("Successfully loaded processor from local cache")
-        add_special_tokens(self.processor.tokenizer)
-
-        if hasattr(self.processor, "image_token"):
-            self.image_token_id = self.processor.tokenizer.convert_tokens_to_ids(self.processor.image_token)
-        else:
-            self.image_token_id = None
-        if hasattr(self.processor, "video_token"):
-            self.video_token_id = self.processor.tokenizer.convert_tokens_to_ids(self.processor.video_token)
-        else:
-            self.video_token_id = None
-        self.eos_id = self.processor.tokenizer.eos_token_id
-        self.pad_id = self.processor.tokenizer.pad_token_id
-        self.vision_end_id = self.processor.tokenizer.convert_tokens_to_ids("</img>")
-
-        # Helper attributes for the dataloader video decoding function
-        self.shortest_edge = self.processor.image_processor.size["shortest_edge"]
-        self.min_height_width = int(np.sqrt(self.shortest_edge))
+        super().__init__(name=name, credentials=credentials, bucket=bucket, cache_dir=cache_dir)
+        # Helper attributes consumed by the dataloader video decoding path.
+        shortest_edge = self.processor.image_processor.size["shortest_edge"]
+        self.min_height_width = int(np.sqrt(shortest_edge))
         self.patch_size = self.processor.video_processor.patch_size
         self.temporal_patch_size = self.processor.video_processor.temporal_patch_size
         self.merge_size = self.processor.video_processor.merge_size
         self.use_smart_resize = True
-        if self.pad_id is None:
-            self.pad_id = self.eos_id
 
     def apply_chat_template(
         self,
@@ -126,14 +70,14 @@ class Nemotron3DenseVLProcessor:
                 image_sizes: torch.Tensor, shape (N_img, 2)
                 pixel_values: torch.Tensor, shape (N_img_patch, 3, 224, 224)
         """
-
-        # messages = [msg for msg in messages if msg.get("role") != "system"]
         assert tokenize, "tokenize must be True"
         assert return_tensors == "pt", "return_tensors must be pt"
         # Note: this tokenizer does not support "content": str, it always expect "content" entry to be a list of dicts
         messages = convert_string_content_to_list_content(messages)
         kwargs = {}
-        for message_id, message in enumerate(messages):
+        # Pre-resize images per-message using smart_resize so the resulting
+        # token count matches the configured min/max-pixel budget.
+        for message in messages:
             if isinstance(message["content"], list):
                 for sub_content in message["content"]:
                     if sub_content.get("type", "") == "image":
@@ -156,11 +100,6 @@ class Nemotron3DenseVLProcessor:
 
         num_video, video_fps, video_total_num_frames, video_frames_indices = maybe_parse_video_content(messages)
         if num_video > 0:
-            # Here we add the args to avoid the error:
-            # File "/usr/local/lib/python3.12/dist-packages/transformers/video_processing_utils.py", line 321, in _decode_and_sample_videos
-            #     raise ValueError(
-            # ValueError: Sampling frames from a list of images is not supported! Set `do_sample_frames=False`.
-            # kwargs["videos_kwargs"] = dict(do_sample_frames=False)
             assert num_video == 1, "only support one video for now"
             fps = video_fps[0]
             total_num_frames = video_total_num_frames[0]
@@ -178,18 +117,12 @@ class Nemotron3DenseVLProcessor:
             add_generation_prompt=add_generation_prompt,
             return_dict=True,
             return_tensors=return_tensors,
-            # padding="max_length",
-            # max_length=16000,
-            # truncation=False,
             **kwargs,
         )
 
         # Convert batch features into single features
-        # By default, the processor returns a batch of features, but we use processor in dataloader, so we need to convert it to single features
         inputs["input_ids"] = inputs["input_ids"][0]  # [N_token]
         inputs["attention_mask"] = inputs["attention_mask"][0]  # [N_token]
-        num_image_tokens = inputs["input_ids"] == self.image_token_id  # [N_token]
-        num_video_tokens = inputs["input_ids"] == self.video_token_id  # [N_token]
         return inputs
 
     def add_assistant_tokens_mask(self, tokens):
@@ -224,9 +157,9 @@ class Nemotron3DenseVLProcessor:
         bos_token_id = self.processor.tokenizer.convert_tokens_to_ids(BOS_TOKEN)
         eos_token_id = self.processor.tokenizer.convert_tokens_to_ids(EOS_TOKEN)
         role_id = self.processor.tokenizer.convert_tokens_to_ids(ROLE)
-        role_ids = self.processor.tokenizer.encode(
-            ROLE, add_special_tokens=False
-        )  # In case the role_id corresponds to multiple tokens, decode it back to string for accurate comparison
+        # ``role`` may tokenize into multiple sub-tokens (e.g. Qwen3-2B-ViT
+        # splits "assistant"); the multi-token branch below handles that case.
+        role_ids = self.processor.tokenizer.encode(ROLE, add_special_tokens=False)
         think_start_id = self.processor.tokenizer.convert_tokens_to_ids("<think>")
         think_end_id = self.processor.tokenizer.convert_tokens_to_ids("</think>")
 
@@ -258,29 +191,3 @@ class Nemotron3DenseVLProcessor:
             return torch.from_numpy(masks)
         else:
             return masks.tolist()
-
-    def tokenize_text(
-        self,
-        caption: str,
-        is_video: bool = False,
-        use_system_prompt: bool = False,
-        system_prompt: Optional[str] = None,
-    ) -> list[int]:
-        """Tokenize a text caption using the underlying tokenizer.
-
-        Delegates to tokenize_caption so VFM diffusion augmentors and VLM dataloaders
-        share the same tokenization logic through a single processor object.
-        """
-        return tokenize_caption(
-            caption,
-            self.processor.tokenizer,
-            is_video=is_video,
-            use_system_prompt=use_system_prompt,
-            system_prompt=system_prompt,
-        )
-
-    def encode(self, *args, **kwargs):
-        return self.processor.encode(*args, **kwargs)
-
-    def decode(self, *args, **kwargs):
-        return self.processor.decode(*args, **kwargs)

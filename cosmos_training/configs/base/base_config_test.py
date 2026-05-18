@@ -99,7 +99,7 @@ def _build_validate_mocks(
     from configs.base.defaults.model_config import OmniMoTModelConfig
 
     vlm_config = MagicMock()
-    vlm_config.load_pretrained = vlm_load_pretrained
+    vlm_config.pretrained_weights.enabled = vlm_load_pretrained
 
     diffusion_expert_config = MagicMock()
     diffusion_expert_config.load_weights_from_pretrained = diffusion_load_weights
@@ -153,7 +153,7 @@ class TestOmniMoTValidateSkipPretrained:
         with patch(self._PATCH_TARGET, return_value=mock_checkpointer):
             OmniMoTModelConfig.validate(omni_config, root_config)
 
-        assert vlm_config.load_pretrained is True
+        assert vlm_config.pretrained_weights.enabled is True
         assert diffusion_expert_config.load_weights_from_pretrained is True
 
     def test_skips_pretrained_when_checkpoint_exists(self, mock_checkpoint_config, mock_job_config):
@@ -174,7 +174,7 @@ class TestOmniMoTValidateSkipPretrained:
         with patch(self._PATCH_TARGET, return_value=mock_checkpointer):
             OmniMoTModelConfig.validate(omni_config, root_config)
 
-        assert vlm_config.load_pretrained is False
+        assert vlm_config.pretrained_weights.enabled is False
         assert diffusion_expert_config.load_weights_from_pretrained is True
 
     def test_skips_diffusion_when_load_path_exists(self, mock_checkpoint_config, mock_job_config):
@@ -195,7 +195,7 @@ class TestOmniMoTValidateSkipPretrained:
         with patch(self._PATCH_TARGET, return_value=mock_checkpointer):
             OmniMoTModelConfig.validate(omni_config, root_config)
 
-        assert vlm_config.load_pretrained is True
+        assert vlm_config.pretrained_weights.enabled is True
         assert diffusion_expert_config.load_weights_from_pretrained is False
 
     def test_does_nothing_when_already_false(self, mock_checkpoint_config, mock_job_config):
@@ -213,5 +213,5 @@ class TestOmniMoTValidateSkipPretrained:
             OmniMoTModelConfig.validate(omni_config, root_config)
             patched_checkpointer.assert_not_called()
 
-        assert vlm_config.load_pretrained is False
+        assert vlm_config.pretrained_weights.enabled is False
         assert diffusion_expert_config.load_weights_from_pretrained is False

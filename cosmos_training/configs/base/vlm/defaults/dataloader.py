@@ -20,7 +20,7 @@ from cosmos.utils.config_helper import ConfigStore
 from cosmos.data.vfm.vlm.collate_fn import custom_collate
 from cosmos.data.vfm.vlm.debug_data_qwen import DebugQwenDataset
 from cosmos.data.vfm.vlm.dummy_data_qwen import DummyQwenDataset
-from cosmos.data.vfm.processors import build_processor
+from cosmos.data.vfm.processors import build_processor_lazy
 
 
 # Debug dataset
@@ -30,7 +30,7 @@ def create_debug_dataloader_config_qwen(
     return L(DataLoader)(
         dataset=L(DebugQwenDataset)(
             tokenizer=L(build_processor_lazy)(
-                tokenizer_type="${model.config.policy.model_name_or_path}",
+                tokenizer_type="${model.config.policy.backbone.model_name}",
                 credentials="${checkpoint.load_from_object_store.credentials}",
                 bucket="${checkpoint.load_from_object_store.bucket}",
             ),
@@ -53,7 +53,7 @@ def create_dummy_dataloader_config_qwen():
     return L(DataLoader)(
         dataset=L(DummyQwenDataset)(
             tokenizer=L(build_processor_lazy)(
-                tokenizer_type="${model.config.policy.model_name_or_path}",
+                tokenizer_type="${model.config.policy.backbone.model_name}",
                 credentials="${checkpoint.load_from_object_store.credentials}",
                 bucket="${checkpoint.load_from_object_store.bucket}",
             ),

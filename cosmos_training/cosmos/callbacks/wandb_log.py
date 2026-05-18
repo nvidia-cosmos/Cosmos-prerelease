@@ -116,19 +116,22 @@ class WandbCallback(Callback):
 
         # Handle case where dataset_name gets batched into a list
         if isinstance(dataset_name, list):
-            # For reasoner, dataset_name should be a list with single item
-            # For generator, dataset_name is a list of size larger than one, pick first item
-            dataset_name = dataset_name[0]
+            # For reasoner, dataset_name will be a list of different datasets
+            # For generator, dataset_name is a list of size larger than one,
+            #   assume they are all the same
+            # Dedup using set to extract identical dataset names
+            dataset_name = list(set(dataset_name))
 
         if dataset_name == "default" and "__url__" in data_batch:
             # try to get the name from url
-            dataset_name = "/".join(data_batch["__url__"][0].split("/")[:-1])
+            dataset_name = ["/".join(data_batch["__url__"][0].split("/")[:-1])]
 
-        if dataset_name not in self.final_loss_log_per_dataset:
-            self.final_loss_log_per_dataset[dataset_name] = _LossRecord()
-            self.final_loss_log_per_dataset[dataset_name].name = dataset_name
-        self.final_loss_log_per_dataset[dataset_name].loss += loss.detach().float()
-        self.final_loss_log_per_dataset[dataset_name].iter_count += 1
+        for single_dataset_name in dataset_name:
+            if single_dataset_name not in self.final_loss_log_per_dataset:
+                self.final_loss_log_per_dataset[single_dataset_name] = _LossRecord()
+                self.final_loss_log_per_dataset[single_dataset_name].name = single_dataset_name
+            self.final_loss_log_per_dataset[single_dataset_name].loss += loss.detach().float()
+            self.final_loss_log_per_dataset[single_dataset_name].iter_count += 1
 
         # VLM: per-sequence loss normalization using token counts when available
         if "avg_num_assistant_tokens" in output_batch:

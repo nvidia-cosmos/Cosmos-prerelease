@@ -73,14 +73,20 @@ def _optimizer_cls(
 
         # FusedAdam is fused by construction and does not accept a ``fused`` kwarg.
         optimizer_kwargs.pop("fused", None)
-        optimizer = FusedAdam(params, capturable=True, master_weights=True, **optimizer_kwargs)
+        # Force ``capturable`` / ``master_weights`` on -- the only configuration
+        # exercised in our distributed-training stack.  Overwrite in-place
+        # rather than passing as positional keywords, otherwise a caller that
+        # also sets either flag would trigger a duplicate-kwarg ``TypeError``.
+        optimizer_kwargs["capturable"] = True
+        optimizer_kwargs["master_weights"] = True
+        optimizer = FusedAdam(params, **optimizer_kwargs)
     else:
         raise NotImplementedError(f"Optimizer {optimizer_type} not found.")
     return optimizer
 
 
 def _build_params_with_metadata(
-    net: nn.Module,
+    model: nn.Module,
     keys_to_select: list[str],
     lr_multipliers: dict[str, float],
     base_lr: float,
@@ -88,11 +94,11 @@ def _build_params_with_metadata(
 ) -> list[tuple[nn.Parameter, ParamMetadata]]:
     """Filter trainable parameters and tag each with its effective LR and weight-decay flag.
 
-    Walks ``net.named_parameters()`` once and produces one
+    Walks ``model.named_parameters()`` once and produces one
     ``(param, ParamMetadata)`` entry per parameter that survives the
-    ``keys_to_select`` filter.  Has the side effect of freezing
-    (``requires_grad=False``) every parameter that does NOT match
-    ``keys_to_select`` when that list is non-empty.
+    ``keys_to_select`` filter and belong to regular model.  Has the side
+    effect of freezing (``requires_grad=False``) every parameter that
+    does NOT match ``keys_to_select`` when that list is non-empty.
 
     Selection rule:
         - If ``keys_to_select`` is empty, every parameter is kept.
@@ -116,7 +122,9 @@ def _build_params_with_metadata(
         param group.
 
     Args:
-        net: Module whose ``named_parameters()`` to scan.
+        model: Module whose ``named_parameters()`` to scan.  Only parameters
+            under the ``net.`` subtree are considered; EMA-network parameters
+            (``net_ema.*``) are intentionally skipped.
         keys_to_select: Substrings used to allowlist parameter names.  Empty
             list = train everything.
         lr_multipliers: Ordered mapping from name-substring to LR multiplier.
@@ -130,14 +138,11 @@ def _build_params_with_metadata(
         List of ``(nn.Parameter, ParamMetadata)`` pairs covering every kept
         parameter.  Frozen parameters are not included.
     """
-    param_dict = {pn: p for pn, p in net.named_parameters() if p.requires_grad}
-    total_tensors = sum(1 for _ in net.parameters())
-    total_elements = sum(p.numel() for p in net.parameters())
-    trainable_elements = sum(p.numel() for p in param_dict.values())
-    log.info(
-        f"Parameters: {total_elements:,} ({total_tensors} tensors), "
-        f"trainable: {trainable_elements:,} ({len(param_dict)} tensors)"
-    )
+    # Optimize only the regular ``net.`` subtree; the sibling ``net_ema``
+    # subtree is intentionally skipped.  Materialize once so we can ``len()``
+    # the total below -- ``named_parameters()`` is a generator.
+    net_params = dict(model.net.named_parameters())
+    param_dict = {pn: p for pn, p in net_params.items() if p.requires_grad}
 
     params_with_metadata: list[tuple[nn.Parameter, ParamMetadata]] = []
 
@@ -167,6 +172,13 @@ def _build_params_with_metadata(
                 ),
             )
         )
+
+    log.info(
+        f"Total tensors: {len(net_params)}, "
+        f"trainable tensors: {len(param_dict)}, "
+        f"selected tensors: {len(params_with_metadata)}"
+    )
+
     return params_with_metadata
 
 
@@ -201,14 +213,13 @@ def _build_optimizer_internal(
     for param, metadata in params_with_metadata:
         params_by_metadata[metadata].append(param)
 
-    for metadata, params in params_by_metadata.items():
+    param_groups: list[dict[str, Any]] = []
+    for metadata, params in sorted(params_by_metadata.items()):
         log.info(
             f"Param group (lr={metadata.lr}, WD={metadata.enable_weight_decay}): "
             f"{len(params):,} tensors, {sum(p.numel() for p in params):,} elements"
         )
 
-    param_groups: list[dict[str, Any]] = []
-    for metadata, params in params_by_metadata.items():
         param_group: dict[str, Any] = {"params": params, "lr": metadata.lr}
         if not metadata.enable_weight_decay:
             param_group["weight_decay"] = 0.0
@@ -342,6 +353,14 @@ class OptimizersContainer(Stateful):
         )
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        # Backward compat with old VLM checkpoints that prefix every key with
+        # "optimizer_0/" (the legacy list-of-optimizers layout; cosmos3 only
+        # ever ran with N=1). Strip the prefix transparently so those
+        # checkpoints continue to resume.
+        legacy_prefix = "optimizer_0/"
+        if any(k.startswith(legacy_prefix) for k in state_dict):
+            state_dict = {k.removeprefix(legacy_prefix): v for k, v in state_dict.items()}
+
         set_optimizer_state_dict(
             model=self.model,
             optimizers=self.optimizers,

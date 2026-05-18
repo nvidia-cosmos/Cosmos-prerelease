@@ -36,21 +36,3 @@ def torch_deterministic_mode():
         yield
     finally:
         torch.use_deterministic_algorithms(prev_mode, warn_only=prev_warn_only)
-
-
-@contextmanager
-def torch_nondeterministic_mode():
-    """Inverse of :func:`torch_deterministic_mode`: locally disables
-    ``torch.use_deterministic_algorithms`` and restores the previous state on exit.
-
-    Use to scope-out kernels that hard-fail under global deterministic mode (e.g.
-    natten's Blackwell FMHA backward, which raises ``NotImplementedError`` whenever
-    ``torch.are_deterministic_algorithms_enabled()`` is True) while keeping the rest
-    of training under strict determinism."""
-    prev_mode = torch.are_deterministic_algorithms_enabled()
-    prev_warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
-    torch.use_deterministic_algorithms(False)
-    try:
-        yield
-    finally:
-        torch.use_deterministic_algorithms(prev_mode, warn_only=prev_warn_only)

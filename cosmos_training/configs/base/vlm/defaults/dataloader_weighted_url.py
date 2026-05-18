@@ -44,7 +44,7 @@ from cosmos.data.vfm.vlm.joint_dataloader import IterativeJointDataLoader
 from cosmos.data.vfm.vlm.joint_dataset_dynamic_batch_webloader import (
     JointDatasetDynamicBatchingWebLoader,
 )
-from cosmos.data.vfm.processors import build_processor
+from cosmos.data.vfm.processors import build_processor_lazy
 
 
 def create_distributor_config(
@@ -204,7 +204,7 @@ def create_data_augmentor_config():
 
 
 processor = L(build_processor_lazy)(
-    tokenizer_type="${model.config.policy.model_name_or_path}",
+    tokenizer_type="${model.config.policy.backbone.model_name}",
     credentials="${checkpoint.load_from_object_store.credentials}",
     bucket="${checkpoint.load_from_object_store.bucket}",
 )
@@ -386,7 +386,7 @@ def register_data_weighted_url():
                         pool_size=16,
                         max_batch_size="${data_setting.max_batch_size}",
                         max_tokens="${data_setting.max_tokens}",
-                        model_name_or_path="${model.config.policy.model_name_or_path}",  # "Qwen/Qwen3-VL-2B-Init"
+                        model_name_or_path="${model.config.policy.backbone.model_name}",  # "Qwen/Qwen3-VL-2B-Init"
                         long_threshold=6400,
                         length_key="input_ids",
                         batching_strategy="prefer_closest",
@@ -464,7 +464,7 @@ def register_data_weighted_url_with_text():
                                     pool_size=16,
                                     max_batch_size="${data_setting.max_batch_size}",
                                     max_tokens="${data_setting.max_tokens}",
-                                    model_name_or_path="${model.config.policy.model_name_or_path}",  # "Qwen/Qwen3-VL-2B-Init"
+                                    model_name_or_path="${model.config.policy.backbone.model_name}",  # "Qwen/Qwen3-VL-2B-Init"
                                     long_threshold=6400,
                                     length_key="input_ids",
                                     batching_strategy="prefer_closest",
@@ -500,7 +500,7 @@ def register_data_weighted_url_with_text():
                                     pool_size=16,
                                     max_batch_size="${data_setting.max_batch_size}",
                                     max_tokens="${data_setting.max_tokens}",
-                                    model_name_or_path="${model.config.policy.model_name_or_path}",  # "Qwen/Qwen3-VL-2B-Init"
+                                    model_name_or_path="${model.config.policy.backbone.model_name}",  # "Qwen/Qwen3-VL-2B-Init"
                                     long_threshold=6400,
                                     length_key="input_ids",
                                     batching_strategy="prefer_closest",
@@ -527,18 +527,20 @@ def register_data_recipe():
     # Recipe names and storage types are stored in the PostgreSQL recipe database.
     # Registered configs:
     #   cosmos_reason2_s3_vlmdb
-    for recipe_name, storage_type in [
-        ("cosmos_reason2_s3_vlmdb", "s3_vlmdb"),  # cosmos_reason2_s3_vlmdb_recipe
+    for recipe_name, storage_type, config_name in [
+        ("cosmos_reason2_s3_vlmdb", "s3_vlmdb", "cosmos_reason2_s3_vlmdb_recipe"),
         (
             "nemotron_nanov2_stage_1_0218_34m_uniform_pretrain_s3_vlmdb",
             "s3_vlmdb",
-        ),  # nemotron_nanov2_stage_1_0218_34m_uniform_s3_vlmdb__v1_recipe
+            "nemotron_nanov2_stage_1_0218_34m_uniform_pretrain_s3_vlmdb_recipe",
+        ),
         (
             "nemotron_nanov2_stage_1_0218_34m_uniform_posttrain_s3_vlmdb",
             "s3_vlmdb",
-        ),  # nemotron_nanov2_stage_1_0218_34m_uniform_posttrain_s3_vlmdb__v1_recipe
+            "nemotron_nanov2_stage_1_0218_34m_uniform_posttrain_s3_vlmdb_recipe",
+        ),
+        ("cosmos3_pai_postrain_3M_v6", "gcp", "cosmos3_pai_postrain_3M_v6_gcp_recipe"),
     ]:
-        config_name = f"{recipe_name.replace('/', '__')}_recipe"
         for distributor_split in ["train", "val"]:
             cs.store(
                 group=f"data_{distributor_split}",
@@ -547,7 +549,7 @@ def register_data_recipe():
                 node=L(VLMRecipeDataLoader)(
                     recipe_name=recipe_name,
                     storage_type=storage_type,
-                    model_name_or_path="${model.config.policy.model_name_or_path}",
+                    model_name_or_path="${model.config.policy.backbone.model_name}",
                     max_tokens="${data_setting.max_tokens}",
                     max_batch_size="${data_setting.max_batch_size}",
                     pool_size=16,

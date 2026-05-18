@@ -89,9 +89,8 @@ def flash2_attention_check(
 
 
     # mixed_modality_sft_8b smoke on Blackwell — flash3 isn't built for arch
-    # 100/103 and natten doesn't support varlen. The numerical "instability"
-    # the ban warned about is acceptable for smoke runs; revisit before
-    # production training on this hardware.
+    # 100/103 and natten doesn't support varlen. Revisit before production
+    # training on this hardware.
     # if is_varlen:
     #     target_fn(
     #         "Flash Attention v2 (flash2) varlen is banned due to instability. "

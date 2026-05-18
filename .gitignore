@@ -1,0 +1,13 @@
+# Python bytecode caches — never check in.
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Editor / OS noise.
+*.swp
+.DS_Store
+
+# Local training output (generated, large).
+training_output/
+outputs/

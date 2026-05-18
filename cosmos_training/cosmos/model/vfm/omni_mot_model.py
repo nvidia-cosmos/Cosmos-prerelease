@@ -123,9 +123,7 @@ class OmniMoTModel(ImaginaireModel):
         # 1. Text tokenizer
         self.vlm_config = self.config.vlm_config
         _vlm_proc = lazy_instantiate(self.vlm_config.tokenizer)
-        vlm_tokenizer = (
-            _vlm_proc.processor.tokenizer if getattr(_vlm_proc, "is_unified_processor", False) else _vlm_proc
-        )
+        vlm_tokenizer = _vlm_proc.tokenizer
         vlm_tokenizer, special_tokens = add_special_tokens(vlm_tokenizer)
         self.vlm_tokenizer = vlm_tokenizer
 
@@ -239,33 +237,34 @@ class OmniMoTModel(ImaginaireModel):
         """
         This function is used to load the pretrained model weights from HF if needed.
 
-        1. If self.vlm_config.load_pretrained is False, we skip loading the pretrained
-           model weights.
-        2. If self.vlm_config.load_pretrained is True, and
+        1. If self.vlm_config.pretrained_weights.enabled is False, we skip
+           loading the pretrained model weights.
+        2. If self.vlm_config.pretrained_weights.enabled is True, and
            self.config.diffusion_expert_config.load_weights_from_pretrained is True,
            we load the understanding pathway weights from HF, and copy them to the
            generation pathway.
-        3. If self.vlm_config.load_pretrained is True, and
+        3. If self.vlm_config.pretrained_weights.enabled is True, and
            self.config.diffusion_expert_config.load_weights_from_pretrained is False,
            we load the understanding pathway weights from HF, but do not copy them to
            the generation pathway. This is used when we warm-start from a load_path
            (but no previous checkpoint exists), and we want to switch the understanding
            pathway weights to a new model (e.g., Qwen3-VL to Cosmos-Reason2).
         """
-        if not self.vlm_config.load_pretrained:
+        pretrained_weights = self.vlm_config.pretrained_weights
+        if not pretrained_weights.enabled:
             return
 
         def _load_language_model(net: torch.nn.Module):
             load_language_model_safetensors(
                 model=net.language_model,
-                checkpoint_path=self.vlm_config.checkpoint_path,
-                credential_path=self.vlm_config.credential_path,
+                checkpoint_path=pretrained_weights.backbone_path,
+                credential_path=pretrained_weights.credentials_path,
                 parallel_dims=self.parallel_dims,
-                checkpoint_format=getattr(self.vlm_config, "vlm_checkpoint_format", None),
+                checkpoint_format=pretrained_weights.checkpoint_format,
             )
 
         # When specified, we load pretrained LLM weights.
-        log.info(f"Loading understanding pathway weights from {self.vlm_config.checkpoint_path}")
+        log.info(f"Loading understanding pathway weights from {pretrained_weights.backbone_path}")
         _load_language_model(self.net)
         if self.config.ema.enabled:
             _load_language_model(self.net_ema)
@@ -432,7 +431,7 @@ class OmniMoTModel(ImaginaireModel):
             scheduler (torch.optim.lr_scheduler.LRScheduler): The optimization scheduler.
         """
 
-        optimizer = lazy_instantiate(optimizer_config, model=self.net)
+        optimizer = lazy_instantiate(optimizer_config, model=self)
         scheduler = lazy_instantiate(scheduler_config, optimizer=optimizer)
         return optimizer, scheduler
 
@@ -770,6 +769,7 @@ class OmniMoTModel(ImaginaireModel):
             sigmas_vision,
             sigmas_action=sigmas_action,
             sigmas_sound=sigmas_sound,
+            iteration=iteration,
         )
         self._replace_clean_with_noised(packed_sequence, gen_data_noised)
 
@@ -1293,6 +1293,7 @@ class OmniMoTModel(ImaginaireModel):
         sigmas: torch.Tensor,
         sigmas_action: torch.Tensor | None = None,
         sigmas_sound: torch.Tensor | None = None,
+        iteration: int | None = None,
     ) -> GenerationDataNoised:
         """
         Diffusion / Flow matching forward process: apply noise of given noise level (sigmas) to input data.
@@ -1323,10 +1324,23 @@ class OmniMoTModel(ImaginaireModel):
         # Sound uses a dense view of the per-sample vision schedule so mixed audio/no-audio
         # batches do not index full-batch sigmas with dense sound positions.
         sigmas_for_sound = sigmas if sigmas_sound is None else sigmas_sound  # [B_items,T_vis] or [n_sound,...]
+
+        # Seeded noise generator (deterministic mode only): keyed on (iteration, rank) so
+        # noise is identical across independent runs. Built on the same CUDA device as
+        # tensor_kwargs_fp32 so we can fuse it into a single torch.randn call below
+        # (no extra CPU alloc + H2D copy). Offset +32768 keeps this seed distinct from
+        # the sigma seed in sample_train_time. When noise_gen is None, torch.randn
+        # falls back to the default CUDA RNG, matching prior non-deterministic behavior.
+        noise_gen: torch.Generator | None = None
+        if iteration is not None and torch.are_deterministic_algorithms_enabled():
+            rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+            noise_gen = torch.Generator(device=self.tensor_kwargs_fp32["device"])
+            noise_gen.manual_seed(iteration * 65536 + rank + 32768)
+
         # Vision
         x0_vision = gen_data_clean.x0_tokens_vision  # list of [C,T,H,W]
         epsilon_vision = [
-            torch.randn(x0_vision_i.size()).to(**self.tensor_kwargs_fp32) for x0_vision_i in x0_vision
+            torch.randn(x0_vision_i.size(), generator=noise_gen, **self.tensor_kwargs_fp32) for x0_vision_i in x0_vision
         ]  # list of [C,T,H,W]
 
         # Derive noisy mask (1 for noised, 0 for clean) for sigmas computation
@@ -1389,7 +1403,8 @@ class OmniMoTModel(ImaginaireModel):
                 ]  # list of [T,action_dim]
             else:
                 epsilon_action = [
-                    torch.randn(x0_action_i.size()).to(**self.tensor_kwargs_fp32) for x0_action_i in x0_action
+                    torch.randn(x0_action_i.size(), generator=noise_gen, **self.tensor_kwargs_fp32)
+                    for x0_action_i in x0_action
                 ]  # list of [T,action_dim]
                 # Conditioning action timesteps are zeroed via (1 - condition_mask) in all modes (base/TF/DF).
                 # Action timesteps are aligned 1-to-1 with video latent frames, not RGB frames.
@@ -1426,7 +1441,7 @@ class OmniMoTModel(ImaginaireModel):
             )
             sound_batch_size = len(packed_sequence.sound.condition_mask)
             epsilon_sound = [
-                torch.randn(x0_i.size()).to(**self.tensor_kwargs_fp32) for x0_i in x0_sound
+                torch.randn(x0_i.size(), generator=noise_gen, **self.tensor_kwargs_fp32) for x0_i in x0_sound
             ]
             # Conditioning frames are zeroed via (1 - condition_mask) in all modes (base/TF/DF).
             # view(-1,1)[:T_sound].T: for base/TF sigmas[i] is (1,) → (1,1) → no-op → (1,1);

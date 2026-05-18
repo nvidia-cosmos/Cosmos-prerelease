@@ -15,15 +15,18 @@
 
 import json
 import os
+import sys
 from types import SimpleNamespace
 from typing import Optional
 
 from transformers import PreTrainedTokenizerFast
 
+from cosmos.data.vfm.processors.base import BaseVLMProcessor
 from cosmos.data.vfm.processors.nemotron3densevl_processor import Nemotron3DenseVLProcessor
 from cosmos.data.vfm.processors.nemotronvl_processor import NemotronVLProcessor
 from cosmos.data.vfm.processors.qwen3vl_processor import Qwen3VLProcessor
 from cosmos.model.vfm.tokenizers.tokenization_qwen2 import Qwen2Tokenizer
+from cosmos.utils.vfm.vlm.pretrained_models_downloader import maybe_download_hf_model_from_s3
 
 _VARIANT_TO_CREDENTIALS = {
     "s3": ("credentials/s3_training.secret", "checkpoints-us-east-1"),
@@ -39,37 +42,18 @@ _VARIANT_TO_CREDENTIALS = {
 _LLM_S3_PREFIX = "cosmos3/pretrained/huggingface"
 
 
-class LLMTokenizerProcessor:
-    """Unified processor interface wrapper for LLM-only (no-vision) tokenizers.
+class LLMTokenizerProcessor(BaseVLMProcessor):
+    """Wrapper that adapts a bare LLM tokenizer to the ``BaseVLMProcessor`` API.
 
-    Exposes the same interface as the VLM processors so all augmentors and
-    model code can treat LLM-only and VLM configs uniformly.
+    Used by LLM-only (no-vision) tokenizer configs so that all augmentors and
+    model code can treat LLM-only and full VLM configs uniformly through the
+    same ``proc.tokenizer`` / ``proc.tokenize_text`` surface. The base class
+    handles ``tokenize_text`` / ``encode`` / ``decode``; we only need to wire
+    up ``self.processor`` so ``.tokenizer`` resolves.
     """
 
-    is_unified_processor: bool = True
-
     def __init__(self, tokenizer):
-        from cosmos.data.vfm.sequence_packing import add_special_tokens
-
-        tokenizer, _ = add_special_tokens(tokenizer)
         self.processor = SimpleNamespace(tokenizer=tokenizer)
-
-    def tokenize_text(
-        self,
-        caption: str,
-        is_video: bool = False,
-        use_system_prompt: bool = False,
-        system_prompt: Optional[str] = None,
-    ) -> list[int]:
-        from cosmos.model.vfm.vlm.qwen3_vl.utils import tokenize_caption
-
-        return tokenize_caption(
-            caption,
-            self.processor.tokenizer,
-            is_video=is_video,
-            use_system_prompt=use_system_prompt,
-            system_prompt=system_prompt,
-        )
 
 
 def _patch_nemotron_llm_tokenizer_vision_tokens(destination_dir: str) -> None:
@@ -115,8 +99,6 @@ def _download_llm_tokenizer(
     bucket: str,
     cache_dir: Optional[str] = None,
 ) -> str:
-    from cosmos.utils.vfm.vlm.pretrained_models_downloader import maybe_download_hf_model_from_s3
-
     return maybe_download_hf_model_from_s3(
         tokenizer_type,
         credentials=credentials,
@@ -171,6 +153,4 @@ def build_processor_lazy(*args, **kwargs):
     lookup on every call, so test fixtures patching ``build_processor`` are
     honored when the config is instantiated.
     """
-    import sys
-
     return sys.modules[__name__].build_processor(*args, **kwargs)

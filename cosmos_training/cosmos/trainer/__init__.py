@@ -121,14 +121,6 @@ class ImaginaireTrainer:
         # Initialize cuDNN.
         torch.backends.cudnn.deterministic = config.trainer.cudnn.deterministic
         torch.backends.cudnn.benchmark = config.trainer.cudnn.benchmark
-        if config.trainer.cudnn.deterministic:
-            # Use only deterministic op implementations. warn_only=True avoids
-            # crashes on ops that lack a deterministic kernel (e.g. some flash-attn
-            # backward passes); a warning is emitted instead.
-            torch.use_deterministic_algorithms(True, warn_only=True)
-            # CuBLAS requires this env var to select deterministic matrix-multiply
-            # algorithms (needed in addition to use_deterministic_algorithms).
-            os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
         # Initialize the callback functions.
         self.callbacks = callback.CallBackGroup(config=config, trainer=self)
         # Initialize the model checkpointer.

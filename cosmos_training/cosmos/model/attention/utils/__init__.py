@@ -24,7 +24,7 @@ from typing import Any
 
 import torch
 
-from cosmos.model.attention.utils.determinism import torch_deterministic_mode, torch_nondeterministic_mode
+from cosmos.model.attention.utils.determinism import torch_deterministic_mode
 from cosmos.model.attention.utils.environment import is_torch_compiling
 from cosmos.model.attention.utils.safe_ops import log
 
@@ -82,5 +82,4 @@ __all__ = [
     "is_blackwell_dc",
     "is_torch_compiling",
     "torch_deterministic_mode",
-    "torch_nondeterministic_mode",
 ]

@@ -158,7 +158,6 @@ class Qwen3VLTextConfig(_Qwen3VLTextConfig):
         self,
         # MoT-specific parameters with comprehensive defaults
         qk_norm_for_text: bool = False,  # Whether to apply QK norm in the understanding (text) pathway
-        qk_norm_for_diffusion: bool = True,  # Whether to apply QK norm in the generation (diffusion) pathway
         freeze_und: bool = False,  # Freeze understanding pathway
         layer_module: str = "MoTDecoderLayer",
         tie_word_embeddings: bool = True,
@@ -166,7 +165,6 @@ class Qwen3VLTextConfig(_Qwen3VLTextConfig):
     ):
         # Store MoT-specific parameters
         self.qk_norm_for_text = qk_norm_for_text
-        self.qk_norm_for_diffusion = qk_norm_for_diffusion
         self.freeze_und = freeze_und
         self.layer_module = layer_module
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
@@ -211,7 +209,6 @@ class Qwen3VLMoeTextConfig(_Qwen3VLMoeTextConfig):
         self,
         # MoT-specific parameters with comprehensive defaults
         qk_norm_for_text: bool = False,  # Whether to apply QK norm in the understanding (text) pathway
-        qk_norm_for_diffusion: bool = True,  # Whether to apply QK norm in the generation (diffusion) pathway
         freeze_und: bool = False,  # Freeze understanding pathway
         layer_module: str = "MoTDecoderLayer",
         tie_word_embeddings: bool = True,
@@ -219,7 +216,6 @@ class Qwen3VLMoeTextConfig(_Qwen3VLMoeTextConfig):
     ):
         # Store MoT-specific parameters
         self.qk_norm_for_text = qk_norm_for_text
-        self.qk_norm_for_diffusion = qk_norm_for_diffusion
         self.freeze_und = freeze_und
         self.layer_module = layer_module
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
@@ -295,14 +291,12 @@ class Nemotron3DenseVLTextConfig(_Nemotron3DenseVLTextConfig):
     def __init__(
         self,
         qk_norm_for_text: bool = False,
-        qk_norm_for_diffusion: bool = True,
         freeze_und: bool = False,
         layer_module: str = "MoTDecoderLayer",
         tie_word_embeddings: bool = False,
         **kwargs,
     ) -> None:
         self.qk_norm_for_text = qk_norm_for_text
-        self.qk_norm_for_diffusion = qk_norm_for_diffusion
         self.freeze_und = freeze_und
         self.layer_module = layer_module
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
@@ -336,8 +330,9 @@ class PackedAttentionMoT(nn.Module):
     Implements understanding and generation pathways with separate projections.
 
     Used for Qwen3VL (Dense), Qwen3VL-MoE, and Nemotron 3 Dense VL variants.
-    QK normalisation and RoPE function are selected via ``layer_types`` and config
-    attributes (``qk_norm_for_text`` / ``qk_norm_for_diffusion``).
+    QK normalisation and RoPE function are selected via ``layer_types`` and the
+    ``qk_norm_for_text`` config attribute (the generation pathway always installs
+    QK norm).
     """
 
     def __init__(self, config, layer_idx: int, layer_types: LayerTypes):
@@ -369,12 +364,8 @@ class PackedAttentionMoT(nn.Module):
             self.k_norm = nn.Identity()
 
         # Generation pathway QK norm
-        if config.qk_norm_for_diffusion:
-            self.q_norm_moe_gen = layer_types.rms_norm(self.head_dim, eps=eps)
-            self.k_norm_moe_gen = layer_types.rms_norm(self.head_dim, eps=eps)
-        else:
-            self.q_norm_moe_gen = nn.Identity()
-            self.k_norm_moe_gen = nn.Identity()
+        self.q_norm_moe_gen = layer_types.rms_norm(self.head_dim, eps=eps)
+        self.k_norm_moe_gen = layer_types.rms_norm(self.head_dim, eps=eps)
 
         # Generation pathway linear projections
         self.q_proj_moe_gen = nn.Linear(

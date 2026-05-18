@@ -41,7 +41,7 @@ pre_exp012_000_phase2_vlm_smoke_4gpu_8b = LazyDict(
             {"override /data_val": "nemotron_nanov2_stage_1_0218_34m_uniform_pretrain_s3_vlmdb_recipe"},
             {"override /model": "vlm_fsdp"},
             {"override /vlm_policy": "qwen3_vl_8b_instruct"},
-            {"override /callbacks": ["basic_vlm", "simple_log"]},
+            {"override /callbacks": ["basic_vlm", "basic_log"]},
             "_self_",
         ],
         job=dict(
@@ -53,16 +53,15 @@ pre_exp012_000_phase2_vlm_smoke_4gpu_8b = LazyDict(
             logging_iter=1,
         ),
         optimizer=dict(
-            config=dict(
-                # Phase 2 REQUIRED: trainable_params regex list.
-                # ".*" trains all parameters — appropriate for smoke test.
-                trainable_params=[".*"],
-                lr=1e-5,
-                fused=True,
-            ),
+            lr=1e-5,
+            fused=True,
         ),
         model=dict(
             config=dict(
+                # Phase 2 requires a trainable_params regex; ".*" = full fine-tune.
+                freeze=dict(
+                    trainable_params=[".*"],
+                ),
                 policy=dict(
                     parallelism=dict(
                         data_parallel_shard_degree=4,

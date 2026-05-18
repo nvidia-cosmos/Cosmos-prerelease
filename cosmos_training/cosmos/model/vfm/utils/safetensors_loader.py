@@ -385,10 +385,24 @@ class MultiRankCheckpointLoader:
         if not safetensors_files:
             if _is_hf_checkpoint_candidate(checkpoint_path):
                 original_checkpoint_path = checkpoint_path
-                # Multi-node: serialize through global rank 0 so we don't race on the
-                # shared HF cache. snapshot_download's per-blob locks are unreliable on
-                # NFS/lustre under concurrent access; without this gate the snapshot
-                # dir can end up with only config.json and the listing below fails.
+                # Multi-rank: serialize the actual download through global rank 0
+                # so we don't race on the shared HF cache. snapshot_download's
+                # per-blob locks are unreliable on NFS/lustre under concurrent
+                # access, and hitting HF from N ranks simultaneously also risks
+                # rate-limiting; without this gate the snapshot dir can end up
+                # with only config.json and the listing below fails.
+                #
+                # We do NOT need N downloads + N barriers. The Slurm job mounts
+                # one shared HF cache (HF_HOME), so once rank 0 finishes the
+                # download all other ranks share that cache. The second call to
+                # _download_hf_checkpoint() on non-zero ranks therefore hits the
+                # populated cache and just resolves the local snapshot path
+                # (snapshot_download is idempotent on cache hits — no re-download,
+                # no network). Two barriers total:
+                #   1. After rank 0's actual download — others wait so they see
+                #      a complete cache before resolving.
+                #   2. After non-zero ranks' cache-hit path resolution — keeps
+                #      ranks aligned before subsequent collective ops below.
                 if dist.is_initialized() and dist.get_world_size() > 1:
                     if dist.get_rank() == 0:
                         checkpoint_path = _download_hf_checkpoint(checkpoint_path)
@@ -849,8 +863,11 @@ def load_language_model(
 
     Args:
         model: The language model to load weights into.
-        checkpoint_path: Path to checkpoint containing .safetensors files.
-        credential_path: Path to S3 credentials
+        checkpoint_path: Path to checkpoint containing .safetensors files. Local
+            paths and S3 URIs are tried first; if no safetensors are found,
+            explicit ``hf://org/model`` Hub URIs and bare ``org/model`` repo IDs
+            fall back to Hugging Face.
+        credential_path: Path to S3 credentials, or None for local/HF.
         parallel_dims: ParallelDims object to use for parallel loading.
             If None, the loading is done in a single rank.
         checkpoint_format: ``"qwen3"``, ``"nemotron_3_dense_vl"``, ``"nemotron_3_llm"``, or None to auto-detect.

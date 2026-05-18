@@ -21,9 +21,8 @@ NATTEN Backend: intermediate APIs
 Only safe to import when NATTEN_SUPPORTED is True.
 """
 
-import contextlib
+from contextlib import nullcontext
 
-import torch
 from natten.context import set_memory_usage_preference, use_kv_parallelism_in_fused_na
 from natten.functional import attention as _natten_attention
 from natten.functional import neighborhood_attention_generic as _natten_multi_dim_attention
@@ -42,77 +41,11 @@ from cosmos.model.attention.natten.checks import (
     natten_attention_check,
     natten_multi_dim_attention_check,
 )
-from cosmos.model.attention.utils import torch_deterministic_mode, torch_nondeterministic_mode
+from cosmos.model.attention.utils import torch_deterministic_mode
 from cosmos.model.attention.utils.environment import is_torch_compiling
 
 set_memory_usage_preference("unrestricted")
 use_kv_parallelism_in_fused_na(True)
-
-
-def _make_nondet_backward(orig_bwd):
-    """Closure factory: returns a backward fn that runs the original inside
-    torch_nondeterministic_mode(). Uses default-arg capture to avoid late-binding bugs."""
-
-    def wrapped(*args, **kwargs):
-        with torch_nondeterministic_mode():
-            return orig_bwd(*args, **kwargs)
-
-    return wrapped
-
-
-def _patch_natten_blackwell_fmha_backward_once() -> None:
-    """One-shot monkey-patch for natten's Blackwell FMHA autograd.Function backward.
-
-    natten's Blackwell FMHA backward queries ``torch.are_deterministic_algorithms_enabled()``
-    at autograd-engine call time (i.e. during ``loss.backward()``) and raises
-    ``RuntimeError`` if it's True. Our forward-only ``torch_nondeterministic_mode()``
-    context manager has long since exited by then, so we patch every
-    ``torch.autograd.Function`` subclass exposed in ``natten.backends.blackwell_fmha``
-    to install the same context inside its ``backward``. Other natten backends
-    (Hopper / Ampere) don't query the flag and aren't affected.
-
-    Idempotent and best-effort: silently no-ops if natten isn't available or its
-    module structure changes (we mark patched classes with a sentinel attribute)."""
-    try:
-        from natten.backends import blackwell_fmha as _bf
-    except ImportError:
-        return
-
-    for name in dir(_bf):
-        cls = getattr(_bf, name)
-        if not (
-            isinstance(cls, type) and issubclass(cls, torch.autograd.Function) and cls is not torch.autograd.Function
-        ):
-            continue
-        if getattr(cls, "_imaginaire_nondet_patched", False):
-            continue
-        # cls.backward is exposed as a plain function (PyTorch's @staticmethod descriptor
-        # returns the underlying callable). Wrap it and re-install as a staticmethod.
-        cls.backward = staticmethod(_make_nondet_backward(cls.backward))
-        cls._imaginaire_nondet_patched = True
-
-
-_patch_natten_blackwell_fmha_backward_once()
-
-
-def _natten_determinism_cm(deterministic: bool):
-    """Determinism context manager for natten forward calls.
-
-    Under torch.compile, returns a ``nullcontext``: Dynamo cannot inline
-    ``@contextlib.contextmanager`` generator-based context managers (raises
-    ``Unsupported: SKIPPED INLINING __enter__``). Within a compiled region,
-    the global determinism flag is queried by natten at trace time, so callers
-    are responsible for setting it appropriately before entering the compiled
-    region — the local override is unavailable under compile.
-
-    Outside torch.compile, returns the appropriate determinism / non-determinism
-    context manager so natten's Blackwell FMHA backend (which raises whenever
-    ``torch.are_deterministic_algorithms_enabled()`` is True) can run when global
-    deterministic mode is on but the caller didn't request a deterministic
-    backward pass."""
-    if is_torch_compiling():
-        return contextlib.nullcontext()
-    return torch_deterministic_mode() if deterministic else torch_nondeterministic_mode()
 
 
 def natten_attention(
@@ -242,7 +175,7 @@ def natten_attention(
         backward_use_pt_reduction = backend_kwargs["backward_use_pt_reduction"]
         del backend_kwargs["backward_use_pt_reduction"]
 
-    with _natten_determinism_cm(deterministic):
+    with torch_deterministic_mode() if deterministic else nullcontext():
         return _natten_attention(
             query=query,
             key=key,
@@ -390,7 +323,7 @@ def natten_multi_dim_attention(
         backward_use_pt_reduction = backend_kwargs["backward_use_pt_reduction"]
         del backend_kwargs["backward_use_pt_reduction"]
 
-    with _natten_determinism_cm(deterministic):
+    with torch_deterministic_mode() if deterministic else nullcontext():
         return _natten_multi_dim_attention(
             query=query,
             key=key,

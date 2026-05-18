@@ -16,6 +16,7 @@
 # Configs for VLM / LLM models
 
 import os
+from typing import Any
 
 import attrs
 import torch.distributed as dist
@@ -35,7 +36,7 @@ from cosmos.model.vfm.mot.unified_mot import (
     Qwen3VLTextConfig,
     Qwen3VLTextForCausalLM,
 )
-from cosmos.data.vfm.processors import build_processor_lazy
+from cosmos.data.vfm.processors import LLMTokenizerProcessor, build_processor_lazy
 from cosmos.model.vfm.tokenizers.tokenization_qwen2 import Qwen2Tokenizer
 
 
@@ -111,53 +112,72 @@ def create_qwen2_tokenizer_with_download(pretrained_model_name: str, config_vari
     # overrides the tokenizer with this function but doesn't fully replace
     # the preset's kwarg dict.
     destination_dir = download_tokenizer_files(pretrained_model_name, config_variant)
-    return Qwen2Tokenizer.from_pretrained(destination_dir)
+    return LLMTokenizerProcessor(Qwen2Tokenizer.from_pretrained(destination_dir))
+
+
+@attrs.define(slots=False)
+class PretrainedWeightsConfig:
+    # Master switch. When False, the trainer skips the pretrained-weights load
+    # path entirely.
+    enabled: bool = True
+
+    # Path to the pretrained-weights snapshot for the backbone. Accepts s3://,
+    # gs://, hf://, or a local filesystem path. Empty means no overlay; the
+    # trainer falls back to whatever the AutoModel constructor produces.
+    backbone_path: str = ""
+
+    # Path to the credentials .secret used to fetch backbone_path from object
+    # storage. Empty means anonymous (works for hf:// and public buckets).
+    credentials_path: str = ""
+
+    # Apply the boto3 GCS-compatibility patch when loading DCP shards from a
+    # gs:// URI. Required for DCP loads from GCS; harmless otherwise.
+    enable_gcs_patch_in_boto3: bool = False
+
+    # Force a specific safetensors weight remapping (e.g. "qwen3" vs
+    # "nemotron_3_dense_vl" / "nemotron_3_llm"). None lets the loader auto-detect.
+    checkpoint_format: str | None = None
 
 
 @attrs.define(slots=False)
 class VLMConfig:
-    # Name of the huggingface model
+    """VLM backbone identity shared by OmniMoTModelConfig.vlm_config and VLMModelConfig.policy.backbone.
+
+    model_instance and tokenizer are typed Any | None instead of LazyDict | None
+    because OmegaConf 2.3 rejects LazyDict as a structured-config annotation; the
+    runtime value is still a LazyDict.
+    """
+
+    # HuggingFace model identifier or local path. Drives AutoConfig + AutoModel selection.
     model_name: str = ""
 
-    # Langugage model class to instantiate
-    model_instance: LazyDict | None = None
+    # Optional pretrained-weights overlay (separate from the AutoModel structural
+    # init driven by model_name).
+    pretrained_weights: PretrainedWeightsConfig = PretrainedWeightsConfig()
 
-    # Tokenizer / processor used by data augmentors.
-    # For VLM configs this is a unified processor (build_processor); for LLM-only configs a raw
-    # tokenizer factory.  Code that needs the raw tokenizer should check is_unified_processor.
-    tokenizer: LazyDict | None = None
+    # Optional LazyCall override for the language-model class to instantiate.
+    # When set, the trainer routes construction through lazy_instantiate(model_instance)
+    # instead of the AutoModelForCausalLM / AutoModelForVision2Seq from_pretrained path.
+    model_instance: Any | None = None
 
-    # Path to the checkpoint
-    checkpoint_path: str = ""
+    # Optional LazyCall override for the tokenizer/processor (a BaseVLMProcessor
+    # subclass). When None, callers may auto-derive via AutoTokenizer.from_pretrained.
+    tokenizer: Any | None = None
 
-    # Path to the credential file
-    credential_path: str = ""  # Path to the credential file
+    # Override class name for the decoder layer (e.g. "Qwen2MoTDecoderLayer"); the
+    # substring "Mo" gates MoE detection in cosmos3_vfm_network. None means no swap.
+    layer_module: str | None = None
 
-    # Whether to enable GCS patch in boto3 for DCP loading from GCS
-    enable_gcs_patch_in_boto3: bool = False
+    # Apply QK normalization in the language-model decoder.
+    qk_norm: bool = False
 
-    # Whether to load the pretrained LLM / VLM
-    load_pretrained: bool = True
-
-    # Layer module to use. We override the decoder layer in huggingface model with this class.
-    # This is needed as we need to initialize MoT layers.
-    layer_module: str = "Qwen2MoTDecoderLayer"
-
-    # Whether to use QK normalization for text expert
-    qk_norm_for_text: bool = False
-
-    # Whether to use QK normalization for diffusion expert
-    qk_norm_for_diffusion: bool = True  # Whether to use QK normalization for diffusion expert
-
-    # If True, use the same word embedding matrices for input and outut embedding layers.
+    # Whether input and output word-embedding matrices are tied. Affects the
+    # safetensors loader (lm_head load is skipped when tied) and the FSDP wrapper.
     tie_word_embeddings: bool = False
 
-    # Whether to prepend a system prompt during text tokenization.
-    # Checkpoints trained with system prompt enabled require this to be True at inference time.
+    # Prepend a system prompt during text tokenization. Checkpoints trained with
+    # system prompt enabled require this set true at inference time.
     use_system_prompt: bool = False
-
-    # If set, forces safetensors weight remapping ("qwen3" vs "nemotron_3_dense_vl"/"nemotron_3_llm"). None = auto-detect.
-    vlm_checkpoint_format: str | None = None
 
 
 # Configs for LLM models
@@ -170,7 +190,6 @@ Qwen3MoT_LLM_0p6b_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -179,9 +198,11 @@ Qwen3MoT_LLM_0p6b_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-0.6B",
         config_variant="hf",
     ),
-    checkpoint_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-0.6B/",
-    credential_path="credentials/s3_training.secret",
-    load_pretrained=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-0.6B/",
+        credentials_path="credentials/s3_training.secret",
+    ),
 )
 
 Qwen3MoT_LLM_0p6b_GCP_Config: VLMConfig = VLMConfig(
@@ -193,7 +214,6 @@ Qwen3MoT_LLM_0p6b_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -202,9 +222,11 @@ Qwen3MoT_LLM_0p6b_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-0.6B",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-0.6B/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-0.6B/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+    ),
 )
 
 Nemotron3_LLM_2b_GCP_Config: VLMConfig = VLMConfig(
@@ -216,7 +238,6 @@ Nemotron3_LLM_2b_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=False,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=False,
             freeze_und=False,
         ),
@@ -225,11 +246,13 @@ Nemotron3_LLM_2b_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Nemotron/NVIDIA-Nemotron-3-2B-BF16",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Nemotron/NVIDIA-Nemotron-3-2B-BF16/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
-    vlm_checkpoint_format="nemotron_3_llm",
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Nemotron/NVIDIA-Nemotron-3-2B-BF16/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+        checkpoint_format="nemotron_3_llm",
+    ),
 )
 
 # Configs for VL instruct models
@@ -245,7 +268,6 @@ Qwen3VLMoT_VLM_30b_a3b_Instruct_Config: VLMConfig = VLMConfig(
             ),
             layer_module="Qwen3VLMoeTextMoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -254,9 +276,11 @@ Qwen3VLMoT_VLM_30b_a3b_Instruct_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-30B-A3B-Instruct",
         config_variant="s3",
     ),
-    checkpoint_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-30B-A3B-Instruct/",
-    credential_path="credentials/s3_training.secret",
-    load_pretrained=True,
+    layer_module="Qwen3VLMoeTextMoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-30B-A3B-Instruct/",
+        credentials_path="credentials/s3_training.secret",
+    ),
 )
 
 
@@ -269,7 +293,6 @@ Qwen3VLMoT_VLM_30b_a3b_Instruct_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="Qwen3VLMoeTextMoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -278,10 +301,12 @@ Qwen3VLMoT_VLM_30b_a3b_Instruct_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-30B-A3B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-30B-A3B-Instruct/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="Qwen3VLMoeTextMoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-30B-A3B-Instruct/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 CosmosReason2_VLM_30b_a3b_Private_GCP_Config: VLMConfig = VLMConfig(
@@ -293,7 +318,6 @@ CosmosReason2_VLM_30b_a3b_Private_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="Qwen3VLMoeTextMoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -302,10 +326,12 @@ CosmosReason2_VLM_30b_a3b_Private_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-30B-A3B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-30B-A3B-Private/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="Qwen3VLMoeTextMoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-30B-A3B-Private/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 # Config for Qwen3VL 235B A22B Instruct model
@@ -319,7 +345,6 @@ Qwen3VLMoT_VLM_235b_a22b_Instruct_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="Qwen3VLMoeTextMoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -328,10 +353,12 @@ Qwen3VLMoT_VLM_235b_a22b_Instruct_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-235B-A22B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-235B-A22B-Instruct/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="Qwen3VLMoeTextMoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-235B-A22B-Instruct/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 
@@ -346,7 +373,6 @@ Qwen3VLMoT_VLM_2b_Instruct_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -355,9 +381,11 @@ Qwen3VLMoT_VLM_2b_Instruct_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-2B-Instruct",
         config_variant="s3",
     ),
-    checkpoint_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-2B-Instruct/",
-    credential_path="credentials/s3_training.secret",
-    load_pretrained=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-2B-Instruct/",
+        credentials_path="credentials/s3_training.secret",
+    ),
 )
 
 Qwen3VLMoT_VLM_2b_Instruct_GCP_Config: VLMConfig = VLMConfig(
@@ -369,7 +397,6 @@ Qwen3VLMoT_VLM_2b_Instruct_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -378,10 +405,12 @@ Qwen3VLMoT_VLM_2b_Instruct_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-2B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-2B-Instruct/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-2B-Instruct/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 Qwen3VLMoT_VLM_2b_Instruct_HF_Config: VLMConfig = VLMConfig(
@@ -393,7 +422,6 @@ Qwen3VLMoT_VLM_2b_Instruct_HF_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -402,7 +430,7 @@ Qwen3VLMoT_VLM_2b_Instruct_HF_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-2B-Instruct",
         config_variant="hf",
     ),
-    load_pretrained=True,
+    layer_module="MoTDecoderLayer",
 )
 
 Nemotron3DenseVL_VLM_2b_GCP_Config: VLMConfig = VLMConfig(
@@ -414,7 +442,6 @@ Nemotron3DenseVL_VLM_2b_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=False,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=False,
             freeze_und=False,
         ),
@@ -423,11 +450,13 @@ Nemotron3DenseVL_VLM_2b_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Nemotron/NVIDIA-Nemotron-3-Dense-VL-2B-BF16-Alignment",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Nemotron/NVIDIA-Nemotron-3-Dense-VL-2B-BF16-Alignment/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
-    vlm_checkpoint_format="nemotron_3_dense_vl",
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Nemotron/NVIDIA-Nemotron-3-Dense-VL-2B-BF16-Alignment/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+        checkpoint_format="nemotron_3_dense_vl",
+    ),
 )
 
 Cosmos3Reasoner_Nemotron_VLM_2b_Private_GCP_Config: VLMConfig = VLMConfig(
@@ -439,7 +468,6 @@ Cosmos3Reasoner_Nemotron_VLM_2b_Private_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=False,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=False,
             freeze_und=False,
         ),
@@ -448,11 +476,13 @@ Cosmos3Reasoner_Nemotron_VLM_2b_Private_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Nemotron/NVIDIA-Nemotron-3-Dense-VL-2B-BF16-Alignment",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/nvidia/Cosmos3-Reasoner-2B-Private/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
-    vlm_checkpoint_format="nemotron_3_dense_vl",
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/nvidia/Cosmos3-Reasoner-2B-Private/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+        checkpoint_format="nemotron_3_dense_vl",
+    ),
 )
 
 CosmosReason2_VLM_2b_GCP_Config: VLMConfig = VLMConfig(
@@ -464,7 +494,6 @@ CosmosReason2_VLM_2b_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -473,10 +502,12 @@ CosmosReason2_VLM_2b_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-2B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-2B/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-2B/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 CosmosReason2_VLM_2b_Private_GCP_Config: VLMConfig = VLMConfig(
@@ -488,7 +519,6 @@ CosmosReason2_VLM_2b_Private_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -497,10 +527,12 @@ CosmosReason2_VLM_2b_Private_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-2B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-2B-Private/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-2B-Private/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 Cosmos3Reasoner_VLM_2b_Private_GCP_Config: VLMConfig = VLMConfig(
@@ -512,7 +544,6 @@ Cosmos3Reasoner_VLM_2b_Private_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -521,10 +552,12 @@ Cosmos3Reasoner_VLM_2b_Private_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-2B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Reasoner-2B-Private/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Reasoner-2B-Private/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 # Config for Qwen3VL 4B Instruct model
@@ -538,7 +571,6 @@ Qwen3VLMoT_VLM_4b_Instruct_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -547,9 +579,11 @@ Qwen3VLMoT_VLM_4b_Instruct_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-4B-Instruct",
         config_variant="s3",
     ),
-    checkpoint_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-4B-Instruct/",
-    credential_path="credentials/s3_training.secret",
-    load_pretrained=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-4B-Instruct/",
+        credentials_path="credentials/s3_training.secret",
+    ),
 )
 
 Qwen3VLMoT_VLM_4b_Instruct_GCP_Config: VLMConfig = VLMConfig(
@@ -561,7 +595,6 @@ Qwen3VLMoT_VLM_4b_Instruct_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -570,10 +603,12 @@ Qwen3VLMoT_VLM_4b_Instruct_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-4B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-4B-Instruct/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-4B-Instruct/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 # Config for Qwen3VL 8B Instruct model
@@ -587,7 +622,6 @@ Qwen3VLMoT_VLM_8b_Instruct_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -596,9 +630,11 @@ Qwen3VLMoT_VLM_8b_Instruct_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-8B-Instruct",
         config_variant="s3",
     ),
-    checkpoint_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-8B-Instruct/",
-    credential_path="credentials/s3_training.secret",
-    load_pretrained=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-8B-Instruct/",
+        credentials_path="credentials/s3_training.secret",
+    ),
 )
 
 Qwen3VLMoT_VLM_8b_Instruct_GCP_Config: VLMConfig = VLMConfig(
@@ -610,7 +646,6 @@ Qwen3VLMoT_VLM_8b_Instruct_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -619,10 +654,12 @@ Qwen3VLMoT_VLM_8b_Instruct_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-8B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-8B-Instruct/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-8B-Instruct/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 CosmosReason2_VLM_8b_Private_GCP_Config: VLMConfig = VLMConfig(
@@ -634,7 +671,6 @@ CosmosReason2_VLM_8b_Private_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -643,10 +679,12 @@ CosmosReason2_VLM_8b_Private_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-8B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-8B-Private/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-8B-Private/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 Cosmos3Reasoner_VLM_8b_Private_GCP_Config: VLMConfig = VLMConfig(
@@ -658,7 +696,6 @@ Cosmos3Reasoner_VLM_8b_Private_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -667,10 +704,12 @@ Cosmos3Reasoner_VLM_8b_Private_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-8B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Reasoner-8B-Private/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Reasoner-8B-Private/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 Cosmos3NanoReasoner_VLM_GCP_Config: VLMConfig = VLMConfig(
@@ -682,7 +721,6 @@ Cosmos3NanoReasoner_VLM_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -691,11 +729,14 @@ Cosmos3NanoReasoner_VLM_GCP_Config: VLMConfig = VLMConfig(
         pretrained_model_name="Qwen/Qwen3-VL-8B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Nano-Reasoner/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Nano-Reasoner/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
+
 
 # Config for Qwen3VL 32B Instruct model
 # Qwen3VL uses Qwen2Tokenizer
@@ -708,7 +749,6 @@ Qwen3VLMoT_VLM_32b_Instruct_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -717,9 +757,11 @@ Qwen3VLMoT_VLM_32b_Instruct_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-32B-Instruct",
         config_variant="s3",
     ),
-    checkpoint_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-32B-Instruct/",
-    credential_path="credentials/s3_training.secret",
-    load_pretrained=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://checkpoints-us-east-1/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-32B-Instruct/",
+        credentials_path="credentials/s3_training.secret",
+    ),
 )
 
 Qwen3VLMoT_VLM_32b_Instruct_GCP_Config: VLMConfig = VLMConfig(
@@ -731,7 +773,6 @@ Qwen3VLMoT_VLM_32b_Instruct_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -740,10 +781,12 @@ Qwen3VLMoT_VLM_32b_Instruct_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-32B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-32B-Instruct/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Qwen/Qwen3-VL-32B-Instruct/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 CosmosReason2_VLM_32b_Private_GCP_Config: VLMConfig = VLMConfig(
@@ -755,7 +798,6 @@ CosmosReason2_VLM_32b_Private_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -764,10 +806,12 @@ CosmosReason2_VLM_32b_Private_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-32B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-32B-Private/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos-Reason2-32B-Private/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 Cosmos3Reasoner_VLM_32b_Private_GCP_Config: VLMConfig = VLMConfig(
@@ -779,7 +823,6 @@ Cosmos3Reasoner_VLM_32b_Private_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -788,10 +831,12 @@ Cosmos3Reasoner_VLM_32b_Private_GCP_Config: VLMConfig = VLMConfig(
         tokenizer_type="Qwen/Qwen3-VL-32B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Reasoner-32B-Private/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Reasoner-32B-Private/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
 
 Cosmos3SuperReasoner_VLM_GCP_Config: VLMConfig = VLMConfig(
@@ -803,7 +848,6 @@ Cosmos3SuperReasoner_VLM_GCP_Config: VLMConfig = VLMConfig(
             ),
             layer_module="MoTDecoderLayer",
             qk_norm_for_text=True,
-            qk_norm_for_diffusion=True,
             tie_word_embeddings=True,
             freeze_und=False,
         ),
@@ -812,11 +856,14 @@ Cosmos3SuperReasoner_VLM_GCP_Config: VLMConfig = VLMConfig(
         pretrained_model_name="Qwen/Qwen3-VL-32B-Instruct",
         config_variant="gcp",
     ),
-    checkpoint_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Super-Reasoner/",
-    credential_path="credentials/gcp_checkpoint.secret",
-    load_pretrained=True,
-    enable_gcs_patch_in_boto3=True,
+    layer_module="MoTDecoderLayer",
+    pretrained_weights=PretrainedWeightsConfig(
+        backbone_path="s3://nv-00-10206-checkpoint/cosmos3/pretrained/huggingface/Cosmos-Reason/Cosmos3-Super-Reasoner/",
+        credentials_path="credentials/gcp_checkpoint.secret",
+        enable_gcs_patch_in_boto3=True,
+    ),
 )
+
 
 
 def register_vlm():

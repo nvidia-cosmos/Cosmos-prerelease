@@ -21,6 +21,7 @@ import torch
 
 from cosmos.utils.config import make_freezable
 from configs.base.defaults.parallelism import ParallelismConfig
+from configs.base.defaults.vlm import VLMConfig
 
 
 def skip_ui_field(*, default=MISSING, default_factory=MISSING, **kwargs):
@@ -91,24 +92,18 @@ class TrainConfig:
 
 
 # Why we does not make this freezable?
-# Because we need to path the cache model dir as model_name_or_path to the cosmos-rl model to use the
+# Because we need to path the cache model dir as backbone.model_name to the cosmos-rl model to use the
 # model weights downloaded from s3. If cosmos-rl support reading model from s3 directly, we can make it freezable.
 @attrs.define(slots=False)
 class PolicyConfig:
     # Parallelism configuration
     parallelism: ParallelismConfig = ParallelismConfig()
-    # The model name or path, compatible with huggingface model name or local path
-    model_name_or_path: str = "Qwen/Qwen2.5-VL-3B-Instruct"
+    # VLM backbone identity, shared with OmniMoTModelConfig.vlm_config.
+    backbone: VLMConfig = VLMConfig()
     # The maximum length for training, longer than this will be ignored for training stability
     model_max_length: int = 16000
     # The maximum length for video tokens, only applied to qwen model
     qwen_max_video_token_length: int = 8000
-
-    # Pretrain weights (Optional)
-    pretrain_weights_path_vlm: str = ""
-    pretrain_weights_path_llm: str = ""
-    pretrain_weights_path_vit: str = ""
-    pretrain_weights_cred: str = "credentials/s3_training.secret"
 
     # Extra model config
     lora: Union[str, None] = None

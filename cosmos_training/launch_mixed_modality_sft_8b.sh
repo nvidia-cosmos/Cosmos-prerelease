@@ -16,12 +16,12 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-WORKDIR="/lustre/fsw/portfolios/cosmos/users/yangyangt/cosmos_opensource/cosmos_training"
+WORKDIR="/lustre/fsw/portfolios/cosmos/users/yangyangt/Cosmos-prerelease/cosmos_training"
 DATASET_JSONL="/lustre/fsw/portfolios/cosmos/users/yangyangt/cosmos_opensource/sft_dataset_bridge/train/video_dataset_file.jsonl"
 DCP_LOAD_PATH="/lustre/fsw/portfolios/cosmos/users/yangyangt/midtrain"
-WAN_VAE_PATH="${WORKDIR}/pretrained/tokenizers/video/wan2pt2/Wan2.2_VAE.pth"
+WAN_VAE_PATH="/lustre/fsw/portfolios/cosmos/users/yangyangt/cosmos_opensource/pretrained/tokenizers/video/wan2pt2/Wan2.2_VAE.pth"
 
-OUTPUT_ROOT="/lustre/fsw/portfolios/cosmos/users/yangyangt/cosmos_opensource/training_output"
+OUTPUT_ROOT="/lustre/fsw/portfolios/cosmos/users/yangyangt/Cosmos-prerelease/training_output"
 LOG_DIR="$OUTPUT_ROOT/logs"
 LOG_FILE="$LOG_DIR/mixed_modality_sft_8b.log"
 
@@ -51,6 +51,11 @@ mkdir -p "$HF_HOME"
 export HF_TOKEN="${HF_TOKEN:-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}"
 export HF_HUB_DISABLE_XET=1
 
+# Determinism: PYTHONHASHSEED must be set before the interpreter starts.
+# --deterministic on scripts/train.py applies the rest (CUBLAS_WORKSPACE_CONFIG,
+# torch.use_deterministic_algorithms, cudnn.deterministic, etc.).
+export PYTHONHASHSEED=42
+
 # ---------------------------------------------------------------------------
 # torchrun launch
 # ---------------------------------------------------------------------------
@@ -62,8 +67,9 @@ export HF_HUB_DISABLE_XET=1
 #   - checkpoint.load_path is the manually-prepared DCP base.
 #   - upload_reproducible_setup=false avoids the startup S3 PUT.
 IMAGINAIRE_OUTPUT_ROOT="$OUTPUT_ROOT" PYTHONPATH=. \
-    torchrun --nproc_per_node=4 --master_port=12343 -m scripts.train \
+    torchrun --nproc_per_node=4 --master_port=50011 -m scripts.train \
     --config=configs/base/config.py \
+    --deterministic \
     -- \
     experiment=mixed_modality_sft_8b \
     "dataloader_train.dataloader.datasets.video.dataset.jsonl_paths=[\"$DATASET_JSONL\"]" \

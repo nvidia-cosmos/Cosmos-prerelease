@@ -22,6 +22,11 @@ from cosmos.utils.callback import Callback
 
 
 class LogTensorShapeCallback(Callback):
+    """Log the shape and dtype of every tensor in ``data_batch`` for the first
+    ``num_log`` training iterations, on every rank. Used to verify dataloader
+    geometry at the start of a run.
+    """
+
     def __init__(self, num_log: int = 10):
         self.num_log = num_log
 
