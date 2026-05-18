@@ -22,15 +22,25 @@ FLOP-based batching (instead of token-based batching).
 Key insight: Runtime scales linearly with FLOPs based on fitted curve from benchmarks.
 """
 
-from typing import Dict, List
-
 import torch
 
-from cosmos.utils.vlm.compute_flops_qwen3vl import compute_qwen3vl_flops_from_config
+from cosmos.tools.flops.qwen3_vl import compute_qwen3vl_flops_from_config
 
 
 class FlopCalculator:
     """Calculate theoretical FLOPs for Qwen3VL samples."""
+
+    # The default fitted_slope / fitted_intercept were calibrated against
+    # compute_qwen3vl_flops_from_config(is_causal=False) -- the bidirectional
+    # upper-bound FLOP count. Causal-correct counting halves the text-decoder
+    # S^2 attention terms and would invalidate the fit, causing the runtime
+    # estimator to underestimate per-sample work and the dynamic batcher to
+    # pack batches too large. Keep this False until the slope and intercept
+    # are refit against is_causal=True benchmark data.
+
+    # benchmark runs and flip _IS_CAUSAL_FOR_CALIBRATION to True so this
+    # calculator inherits the algorithmically correct FLOP count by default.
+    _IS_CAUSAL_FOR_CALIBRATION: bool = False
 
     def __init__(
         self,
@@ -65,7 +75,7 @@ class FlopCalculator:
         else:
             self.spatial_merge_size = 2
 
-    def get_num_visual_tokens(self, sample: Dict) -> int:
+    def get_num_visual_tokens(self, sample: dict) -> int:
         """
         Extract number of visual tokens from sample.
 
@@ -96,7 +106,7 @@ class FlopCalculator:
             # Text-only sample
             return 0
 
-    def get_num_patches(self, sample: Dict) -> int:
+    def get_num_patches(self, sample: dict) -> int:
         """
         Extract number of patches from sample.
 
@@ -120,7 +130,7 @@ class FlopCalculator:
         else:
             return 0
 
-    def compute_single_sample_flops(self, sample: Dict) -> float:
+    def compute_single_sample_flops(self, sample: dict) -> float:
         """
         Compute FLOPs for single sample (batch_size=1).
 
@@ -140,12 +150,13 @@ class FlopCalculator:
             total_tokens=total_tokens,
             visual_tokens=num_visual_tokens,
             num_patches=num_patches,
+            is_causal=self._IS_CAUSAL_FOR_CALIBRATION,
         )
 
         # Return total FLOPs including forward + backward
         return result["total_flops"] * self.batch_multiplier
 
-    def compute_batch_flops(self, samples: List[Dict]) -> float:
+    def compute_batch_flops(self, samples: list[dict]) -> float:
         """
         Compute FLOPs for a batch of samples.
 
@@ -153,7 +164,7 @@ class FlopCalculator:
         Attention is O(n²) where n = max(sequence_lengths).
 
         Args:
-            samples: List of samples in batch
+            samples: list of samples in batch
 
         Returns:
             Total FLOPs for forward + backward pass on this batch
@@ -181,6 +192,7 @@ class FlopCalculator:
             total_tokens=max_total_tokens,
             visual_tokens=int(avg_visual_tokens),
             num_patches=int(avg_num_patches),
+            is_causal=self._IS_CAUSAL_FOR_CALIBRATION,
         )
 
         # Scale by batch size and forward+backward multiplier
