@@ -36,11 +36,11 @@ applied — the old files have been deleted from HEAD.
 |---|---|---|
 | `cosmos.utils.vfm.vlm.constant` | `cosmos.utils.vlm.constant` | identical names exported |
 | `cosmos.utils.vfm.vlm.create_position_ids` | `cosmos.utils.vlm.create_position_ids` | `get_position_ids`, `get_rope_index_qwen3_vl` |
-| `cosmos.utils.vfm.vlm.flop_calculator` | `cosmos.utils.vlm.flop_calculator` | `FlopCalculator` |
+| `cosmos.utils.vfm.vlm.flop_calculator` | **DELETED** | `FlopCalculator` was preserved during the initial vfm/vlm→vlm merge, then confirmed orphan (zero in-tree refs) and removed. If a backport tries to add code that imports `flop_calculator`, the class no longer exists — drop the backport or re-introduce the class deliberately. |
 | `cosmos.utils.vfm.vlm.optimizer` | `cosmos.utils.vlm.optimizer` | `OptimizerConfig`, `build_optimizers`, `build_lr_schedulers` |
 | `cosmos.utils.vfm.vlm.pretrained_models_downloader` | `cosmos.utils.vlm.pretrained_models_downloader` | `maybe_download_hf_model_from_s3`, `parallel_download_s3_prefix_to_dir`, `s3_dir_exists`, `has_model_weights`, `_load_s3_credentials`, `_download_from_hf_hub` |
 | `cosmos.utils.vfm.fused_adam` | `cosmos.utils.fused_adam` | `FusedAdam` (DTensor-aware) |
-| `cosmos.utils.vlm.compute_flops_qwen3vl` | `cosmos.tools.flops.qwen3_vl` | `compute_qwen3vl_flops_from_config` now accepts `is_causal` (defaults to True; the only in-tree caller, `utils/vlm/flop_calculator.py`, passes `is_causal=False`). Numeric output verified bit-identical when `is_causal=False`. |
+| `cosmos.utils.vlm.compute_flops_qwen3vl` | `cosmos.tools.flops.qwen3_vl` | `compute_qwen3vl_flops_from_config` now accepts `is_causal` (defaults to True). Numeric output verified bit-identical when `is_causal=False` against the deleted local impl. Note: the only caller (`utils/vlm/flop_calculator.py`) has since been deleted as well, so this redirect is mostly historical. |
 
 ## Feature mapping inside merged files (what came from where)
 
@@ -67,12 +67,12 @@ Contains the union:
   - `not INTERNAL` → `CheckpointConfig.maybe_from_uri` + `download_checkpoint_v2` branch — was vfm/vlm-only
   - Cache check accepts `vocab.json` OR `tokenizer.json` — was vlm-only (vfm/vlm checked only `vocab.json`)
 
-### `utils/vlm/flop_calculator.py`
-The vfm/vlm version was adopted wholesale:
-- Imports from `cosmos.tools.flops.qwen3_vl` (canonical), not from sibling `compute_flops_qwen3vl`
-- Adds `_IS_CAUSAL_FOR_CALIBRATION: bool = False` class constant
-- Calls `compute_qwen3vl_flops_from_config(..., is_causal=self._IS_CAUSAL_FOR_CALIBRATION)`
-- Numeric verification (2026-05-18): output dict bit-identical to old behavior across dense/MoE × text/image/video cases when `is_causal=False`
+### `utils/vlm/flop_calculator.py` — DELETED
+Initially merged from vfm/vlm/. Subsequently determined to have zero in-tree
+references (the dynamic batcher this was built for never wired it up here) and
+deleted on 2026-05-18. The bit-identical FLOP numeric verification still holds
+for `cosmos.tools.flops.qwen3_vl.compute_qwen3vl_flops_from_config(..., is_causal=False)`
+if you ever need to rebuild this calculator.
 
 ### `utils/vlm/create_position_ids.py`, `utils/vlm/constant.py`
 The vfm/vlm version was adopted wholesale. Logic-identical to the prior `utils/vlm/`
