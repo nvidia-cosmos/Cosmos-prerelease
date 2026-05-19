@@ -2,7 +2,7 @@
 # TOML-launch sibling of run_mixed_modality_sft_trace.sh.
 #
 # Same job (mixed_modality_sft_8b smoke + import tracer), but the common
-# Hydra overrides live in toml/mixed_modality_sft_8b.toml instead
+# Hydra overrides live in examples/toml/mixed_modality_sft_8b.toml instead
 # of being inlined on the CLI. Only the project-specific paths
 # (jsonl_paths, vae_path) and the env-controlled trainer.max_iter remain
 # as CLI tail overrides.
@@ -19,6 +19,7 @@ set -uo pipefail
 
 # Self-locate: WORKDIR is the directory this script sits in (cosmos_training/).
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOML_FILE="$WORKDIR/../examples/toml/mixed_modality_sft_8b.toml"
 DATASET_JSONL="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/workdir/cosmos_opensource/sft_dataset_bridge/train/video_dataset_file.jsonl"
 WAN_VAE_PATH="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/workdir/cosmos_opensource/pretrained/tokenizers/video/wan2pt2/Wan2.2_VAE.pth"
 # Note: DCP_LOAD_PATH is in the TOML ([train.ckpt].load_path), not here.
@@ -69,11 +70,10 @@ if os.environ.get("COSMOS_IMPORT_TRACE") == "1":
 PYEOF
 
 # 2. Sanity-check inputs.
-[[ -d "$WORKDIR" ]]      || { echo "ERROR: WORKDIR not found: $WORKDIR" >&2; exit 1; }
+[[ -d "$WORKDIR" ]]       || { echo "ERROR: WORKDIR not found: $WORKDIR" >&2; exit 1; }
 [[ -f "$DATASET_JSONL" ]] || { echo "ERROR: dataset jsonl not found: $DATASET_JSONL" >&2; exit 1; }
 [[ -f "$WAN_VAE_PATH" ]]  || { echo "ERROR: Wan VAE not found: $WAN_VAE_PATH" >&2; exit 1; }
-[[ -f "$WORKDIR/toml/mixed_modality_sft_8b.toml" ]] \
-    || { echo "ERROR: TOML not found: $WORKDIR/toml/mixed_modality_sft_8b.toml" >&2; exit 1; }
+[[ -f "$TOML_FILE" ]]     || { echo "ERROR: TOML not found: $TOML_FILE" >&2; exit 1; }
 
 cd "$WORKDIR"
 
@@ -88,7 +88,7 @@ echo ">>> $(date '+%H:%M:%S') Launching torchrun (port $PORT, max_iter $MAX_ITER
 # PYTHONPATH order: tracer dir FIRST so its sitecustomize wins.
 #
 # What goes where:
-#   --toml  →  toml/mixed_modality_sft_8b.toml carries
+#   --toml  →  examples/toml/mixed_modality_sft_8b.toml carries
 #              job.wandb_mode, trainer.{max_iter, logging_iter, run_validation},
 #              upload_reproducible_setup, experiment=mixed_modality_sft_8b,
 #              checkpoint.load_path, model.config.parallelism.data_parallel_shard_degree
@@ -101,8 +101,7 @@ COSMOS_IMPORT_LOG_DIR="$LOG_DIR" \
 PYTHONPATH="$TRACER_DIR:$WORKDIR" \
 IMAGINAIRE_OUTPUT_ROOT=/tmp/cosmos-trace-output \
     torchrun --nproc_per_node=4 --master_port=$PORT -m scripts.train \
-    --config=configs/base/config.py \
-    --toml=toml/mixed_modality_sft_8b.toml \
+    --toml="$TOML_FILE" \
     -- \
     "dataloader_train.dataloader.datasets.video.dataset.jsonl_paths=[\"$DATASET_JSONL\"]" \
     "model.config.tokenizer.vae_path=$WAN_VAE_PATH" \

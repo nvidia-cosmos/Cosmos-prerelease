@@ -187,20 +187,26 @@ def launch(config: Config, args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     # Usage:
-    #   torchrun --nproc_per_node=1 -m scripts.train --config=configs/base/config.py
-    #   torchrun --nproc_per_node=1 -m scripts.train --config=.../config.py --toml=interface.toml
-    # When --config and --toml are both given, --toml is treated as the flat
-    # interface.toml schema (see toml/vfm_example.toml).
+    #   torchrun --nproc_per_node=1 -m scripts.train --toml=interface.toml
+    #   torchrun --nproc_per_node=1 -m scripts.train --config=.../vlm/config.py --toml=interface.toml
+    # --config defaults to configs/base/config.py (vfm-base). Pass --config
+    # explicitly for vfm-vlm (configs/base/vlm/config.py) or any other variant.
+    # When --toml is given, it is treated as the flat interface.toml schema —
     # scripts/interface_toml.py translates it into Hydra overrides; the variant
-    # (vfm-vlm vs vfm-base) is inferred from the --config path. When --toml is
-    # alone, it must be a full structured TOML (root _target_ etc.).
+    # (vfm-vlm vs vfm-base) is inferred from the --config path. Pass a
+    # structured config (.py / .yaml / .toml) directly via --config=… without
+    # --toml for the non-interface path.
 
     # Get the config file from the input arguments.
     parser = argparse.ArgumentParser(description="Training")
     parser.add_argument(
         "--config",
-        help="Path to base config (.py/.yaml/.toml). With --toml this is the Hydra base.",
-        required=False,
+        default="configs/base/config.py",
+        help=(
+            "Path to base config (.py/.yaml/.toml). Defaults to "
+            "configs/base/config.py (vfm-base). With --toml this is the Hydra "
+            "base whose variant drives the interface_toml mapping."
+        ),
     )
     parser.add_argument(
         "--toml",
@@ -250,16 +256,10 @@ For python-based LazyConfig, use "path.key=value".
     if args.deterministic:
         _setup_deterministic_env_and_backends()
 
-    if args.config and args.toml:
-        config_path = args.config
+    config_path = args.config
+    if args.toml:
         interface_overrides = translate_interface_toml(args.toml, args.config)
         args.opts = list(args.opts or []) + interface_overrides
-    elif args.toml:
-        config_path = args.toml
-    elif args.config:
-        config_path = args.config
-    else:
-        parser.error("Provide --config and/or --toml.")
 
     config = load_config(config_path, args.opts)
 

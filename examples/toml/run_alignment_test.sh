@@ -2,13 +2,15 @@
 # Alignment test: --dryrun the same job two ways and diff the resolved YAML.
 #
 #   A) direct CLI overrides (mirrors run_mixed_modality_sft_trace.sh)
-#   B) --toml=toml/alignment_test.toml + the project-specific
+#   B) --toml=examples/toml/alignment_test.toml + the project-specific
 #      jsonl/vae paths as CLI tail
 #
 # If interface_toml.py + the TOML are correctly aligned, both invocations
 # produce byte-identical config.yaml files.
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOML_FILE="$SCRIPT_DIR/alignment_test.toml"
 WORKDIR="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/cosmos_training"
 DATASET_JSONL="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/workdir/cosmos_opensource/sft_dataset_bridge/train/video_dataset_file.jsonl"
 DCP_LOAD_PATH="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/workdir/cosmos_opensource/midtrain"
@@ -48,11 +50,10 @@ A_EXIT=$?
 A_YAML=$(grep -oE '/tmp/align_a/[^ ]+/config\.yaml' "$OUT_A.log" | tail -1)
 echo "    exit=$A_EXIT yaml=$A_YAML"
 
-echo ">>> B) --toml=toml/alignment_test.toml"
+echo ">>> B) --toml=$TOML_FILE"
 IMAGINAIRE_OUTPUT_ROOT="$OUT_B" PYTHONPATH=. \
     torchrun --nproc_per_node=1 --master_port=12382 -m scripts.train \
-    --config=configs/base/config.py \
-    --toml=toml/alignment_test.toml \
+    --toml="$TOML_FILE" \
     --dryrun \
     -- \
     "${COMMON_OVERRIDES[@]}" \

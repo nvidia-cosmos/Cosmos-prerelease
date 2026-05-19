@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # TOML-mode equivalent of launch_action_libero.sh. Loads structured overrides
-# from toml/launch_action_libero.toml; per-user paths + keys with no
+# from examples/toml/launch_action_libero.toml; per-user paths + keys with no
 # interface-schema mapping flow through the CLI tail.
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKDIR="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/cosmos_training"
 LIBERO_BASE="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/cosmos_training/LIBERO_LeRobot_v3"
 WAN_VAE_PATH="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/workdir/cosmos_opensource/pretrained/tokenizers/video/wan2pt2/Wan2.2_VAE.pth"
-TOML_FILE="toml/launch_action_libero.toml"
+TOML_FILE="$SCRIPT_DIR/toml/launch_action_libero.toml"
 
 # Pretrained checkpoint to warm-start from. Override via:
 #   CHECKPOINT_PATH=/your/path bash launch_action_libero_toml.sh
@@ -41,8 +42,8 @@ export LIBERO_LOCAL_DATA_ROOT="$LIBERO_BASE"
 mkdir -p "$LOG_DIR"
 
 echo ">>> $(date '+%H:%M:%S') Checking inputs..."
-[[ -d "$WORKDIR" ]]            || { echo "ERROR: WORKDIR not found: $WORKDIR" >&2; exit 1; }
-[[ -f "$WORKDIR/$TOML_FILE" ]] || { echo "ERROR: TOML not found: $WORKDIR/$TOML_FILE" >&2; exit 1; }
+[[ -d "$WORKDIR" ]]   || { echo "ERROR: WORKDIR not found: $WORKDIR" >&2; exit 1; }
+[[ -f "$TOML_FILE" ]] || { echo "ERROR: TOML not found: $TOML_FILE" >&2; exit 1; }
 [[ -d "$LIBERO_BASE" ]]        || { echo "ERROR: LIBERO root not found: $LIBERO_BASE" >&2; exit 1; }
 [[ -d "$CHECKPOINT_PATH" ]]    || { echo "ERROR: checkpoint not found: $CHECKPOINT_PATH" >&2; exit 1; }
 
@@ -62,7 +63,6 @@ export PYTHONHASHSEED=42
 
 LOGURU_LEVEL=DEBUG IMAGINAIRE_OUTPUT_ROOT="$OUTPUT_ROOT" PYTHONPATH=. \
     torchrun --nproc_per_node=4 --master_port=50013 -m scripts.train \
-    --config=configs/base/config.py \
     --toml="$TOML_FILE" \
     --deterministic \
     -- \

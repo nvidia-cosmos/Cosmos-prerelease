@@ -13,12 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Translate ``toml/*.toml`` style configs into Hydra overrides.
+"""Translate ``examples/toml/*.toml`` style configs into Hydra overrides.
 
-The interface schema (see ``toml/vfm_example.toml`` /
-``toml/vlm_example.toml``) is a flat, snake_case TOML with top-level
-sections ``[job]``, ``[train]``, ``[train.train_policy]``, ``[train.ckpt]``,
-``[policy]``, ``[policy.parallelism]``, ``[logging]``.
+The interface schema (see ``examples/toml/launch_mixed_modality_sft_8b.toml`` /
+``examples/toml/launch_vlm_llava_ov.toml``) is a flat, snake_case TOML with
+top-level sections ``[job]``, ``[train]``, ``[train.train_policy]``,
+``[train.ckpt]``, ``[policy]``, ``[policy.parallelism]``, ``[logging]``.
 
 Two mapping dicts route the same interface key to the appropriate Hydra path
 depending on the variant inferred from ``--config``:
@@ -95,22 +95,30 @@ INTERFACE_TO_HYDRA_VFM_VLM: MappingDict = {
     "train.upload_reproducible_setup": ["upload_reproducible_setup"],
 
     # ---------- §6. optimizer ----------
-    "train.optm_name": ["optimizer.config.name"],
-    "train.optm_fused": ["optimizer.config.fused"],
-    # scheduler.{init_lr,end_lr,lr,lr_decay_iters} are OmegaConf interpolations
-    # off optimizer.config.* / trainer.max_iter — see warmup_cosine_lr SKU at
-    # configs/base/vlm/defaults/optimizer.py. Setting the optimizer side
-    # propagates automatically.
-    "train.optm_init_lr": ["optimizer.config.init_lr"],
-    "train.optm_end_lr": ["optimizer.config.end_lr"],
-    "train.optm_weight_decay": ["optimizer.config.weight_decay"],
-    "train.optm_betas": ["optimizer.config.betas"],
+    # vfm-vlm optimizer is a build_optimizer LazyCall (no nested OptimizerConfig);
+    # kwargs live directly under optimizer.*. SKU swap goes through the Hydra
+    # defaults group override (`optimizer=adamw`).
+    "train.optm_name": [
+        (
+            "optimizer",
+            lambda v: {"FusedAdam": "fusedadamw", "AdamW": "adamw"}.get(str(v), str(v).lower()),
+        ),
+    ],
+    "train.optm_fused": ["optimizer.fused"],
+    # init_lr / end_lr have no scalar mapping — they're folded into
+    # scheduler.f_start / scheduler.f_min ratios against optimizer.lr.
+    "train.optm_init_lr": [],
+    "train.optm_end_lr": [],
+    "train.optm_weight_decay": ["optimizer.weight_decay"],
+    "train.optm_betas": ["optimizer.betas"],
 
     # ---------- §11. callbacks ----------
     "train.optm_grad_norm_clip": ["trainer.callbacks.grad_clip.clip_norm"],
 
     # ---------- §7. scheduler ----------
-    "train.optm_warmup_steps": ["scheduler.warmup_iters"],
+    # warmup_cosine_lr is a build_lr_scheduler LazyCall with warm_up_steps
+    # registered as a list (see configs/base/vlm/defaults/optimizer.py).
+    "train.optm_warmup_steps": [("scheduler.warm_up_steps", _as_list)],
     # decay type swaps the scheduler SKU via Hydra defaults override.
     "train.optm_decay_type": [
         (
@@ -163,12 +171,14 @@ INTERFACE_TO_HYDRA_VFM_VLM: MappingDict = {
     "train.ckpt.load_path": ["checkpoint.load_path"],
 
     # ---------- §3. model ----------
-    "policy.model_name_or_path": ["model.config.policy.model_name_or_path"],
-    # model_safetensor_path fans out to all three pretrain_weights_path_*.
+    # The HF identifier / local path lives on PolicyConfig.backbone (VLMConfig),
+    # not as a flat field on PolicyConfig.
+    "policy.model_name_or_path": ["model.config.policy.backbone.model_name"],
+    # Pretrained-weights overlay is a single backbone_path on
+    # VLMConfig.pretrained_weights (PretrainedWeightsConfig). The legacy
+    # per-tower pretrain_weights_path_{vlm,llm,vit} fields no longer exist.
     "policy.model_safetensor_path": [
-        "model.config.policy.pretrain_weights_path_vlm",
-        "model.config.policy.pretrain_weights_path_llm",
-        "model.config.policy.pretrain_weights_path_vit",
+        "model.config.policy.backbone.pretrained_weights.backbone_path",
     ],
     "policy.model_max_length": ["model.config.policy.model_max_length"],
     # cosmos_training: no per-PolicyConfig flag; activation checkpointing lives
@@ -272,7 +282,12 @@ INTERFACE_TO_HYDRA_VFM_BASE: MappingDict = {
     # ------- [policy] -------
     # vfm-base swaps PolicyConfig for VLMConfig + parallelism flags.
     "policy.model_name_or_path": ["model.config.vlm_config.model_name"],
-    "policy.model_safetensor_path": ["model.config.vlm_config.checkpoint_path"],
+    # Pretrained-weights overlay lives on VLMConfig.pretrained_weights
+    # (PretrainedWeightsConfig.backbone_path). The flat checkpoint_path field
+    # the original mapping targeted does not exist on VLMConfig.
+    "policy.model_safetensor_path": [
+        "model.config.vlm_config.pretrained_weights.backbone_path",
+    ],
     # model_max_length has no scalar equivalent in vfm-base; SKU-driven.
     "policy.model_max_length": [],
     "policy.model_gradient_checkpointing": [

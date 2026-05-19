@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # TOML-mode equivalent of launch_t2w_sft_local_datapacker.sh. Loads structured
-# overrides from toml/launch_t2w_sft_local_datapacker.toml; per-user paths +
-# keys with no interface-schema mapping flow through the CLI tail.
+# overrides from examples/toml/launch_t2w_sft_local_datapacker.toml; per-user
+# paths + keys with no interface-schema mapping flow through the CLI tail.
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKDIR="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/cosmos_training"
 DATASET_JSONL="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/workdir/cosmos_opensource/sft_dataset_bridge/train/video_dataset_file.jsonl"
 WAN_VAE_PATH="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/workdir/cosmos_opensource/pretrained/tokenizers/video/wan2pt2/Wan2.2_VAE.pth"
-TOML_FILE="toml/launch_t2w_sft_local_datapacker.toml"
+TOML_FILE="$SCRIPT_DIR/toml/launch_t2w_sft_local_datapacker.toml"
 
 OUTPUT_ROOT="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/training_output"
 LOG_DIR="$OUTPUT_ROOT/logs"
@@ -16,8 +17,8 @@ LOG_FILE="$LOG_DIR/t2w_sft_8b_local_datapacker_toml.log"
 mkdir -p "$LOG_DIR"
 
 echo ">>> $(date '+%H:%M:%S') Checking inputs..."
-[[ -d "$WORKDIR" ]]            || { echo "ERROR: WORKDIR not found: $WORKDIR" >&2; exit 1; }
-[[ -f "$WORKDIR/$TOML_FILE" ]] || { echo "ERROR: TOML not found: $WORKDIR/$TOML_FILE" >&2; exit 1; }
+[[ -d "$WORKDIR" ]]   || { echo "ERROR: WORKDIR not found: $WORKDIR" >&2; exit 1; }
+[[ -f "$TOML_FILE" ]] || { echo "ERROR: TOML not found: $TOML_FILE" >&2; exit 1; }
 [[ -f "$DATASET_JSONL" ]]      || { echo "ERROR: dataset jsonl not found: $DATASET_JSONL" >&2; exit 1; }
 [[ -f "$WAN_VAE_PATH" ]]       || { echo "ERROR: Wan VAE not found: $WAN_VAE_PATH" >&2; exit 1; }
 
@@ -37,7 +38,6 @@ export PYTHONHASHSEED=42
 
 IMAGINAIRE_OUTPUT_ROOT="$OUTPUT_ROOT" PYTHONPATH=. \
     torchrun --nproc_per_node=4 --master_port=50014 -m scripts.train \
-    --config=configs/base/config.py \
     --toml="$TOML_FILE" \
     --deterministic \
     -- \

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # TOML-mode equivalent of launch_vlm_llava_ov.sh. Loads structured overrides
-# from toml/launch_vlm_llava_ov.toml (variant=vfm-vlm); per-user paths +
-# keys with no interface-schema mapping flow through the CLI tail.
+# from examples/toml/launch_vlm_llava_ov.toml (variant=vfm-vlm); per-user paths
+# + keys with no interface-schema mapping flow through the CLI tail.
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKDIR="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/cosmos_training"
 MODEL_PATH="/lustre/fsw/portfolios/cosmos/projects/cosmos_base_training/users/maoshengl/models/Siglip2-Qwen3-1.7B-BF16-Alignment"
-TOML_FILE="toml/launch_vlm_llava_ov.toml"
+TOML_FILE="$SCRIPT_DIR/toml/launch_vlm_llava_ov.toml"
 
 OUTPUT_ROOT="/nfs/sw/sw_aidot/users/pzeren/Cosmos-prerelease/training_output"
 LOG_DIR="$OUTPUT_ROOT/logs"
@@ -15,9 +16,9 @@ LOG_FILE="$LOG_DIR/pre_exp012_llava_ov_datapacker_toml.log"
 mkdir -p "$LOG_DIR"
 
 echo ">>> $(date '+%H:%M:%S') Checking inputs..."
-[[ -d "$WORKDIR" ]]            || { echo "ERROR: WORKDIR not found: $WORKDIR" >&2; exit 1; }
-[[ -f "$WORKDIR/$TOML_FILE" ]] || { echo "ERROR: TOML not found: $WORKDIR/$TOML_FILE" >&2; exit 1; }
-[[ -d "$MODEL_PATH" ]]         || { echo "ERROR: model dir not found: $MODEL_PATH" >&2; exit 1; }
+[[ -d "$WORKDIR" ]]    || { echo "ERROR: WORKDIR not found: $WORKDIR" >&2; exit 1; }
+[[ -f "$TOML_FILE" ]]  || { echo "ERROR: TOML not found: $TOML_FILE" >&2; exit 1; }
+[[ -d "$MODEL_PATH" ]] || { echo "ERROR: model dir not found: $MODEL_PATH" >&2; exit 1; }
 
 cd "$WORKDIR"
 echo ">>> $(date '+%H:%M:%S') WORKDIR:   $WORKDIR"
