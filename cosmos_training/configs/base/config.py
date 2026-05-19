@@ -135,6 +135,10 @@ def make_config() -> Config:
     # (or switch to import_all_modules_from_package("experiments", reload=True)
     # for auto-discovery of every .py under experiments/).
     import experiments.sft.mixed_modality_sft_8b  # noqa: F401
+    import experiments.sft.mixed_modality_sft_nano  # noqa: F401
+    import experiments.sft.mixed_modality_sft_cosmos3_super  # noqa: F401
+    import experiments.sft.action_fdm_sft_nano  # noqa: F401
+    import experiments.sft.action_policy_sft_nano  # noqa: F401
     import configs.base.experiment.action.posttrain_config.libero_policy_datapacker_experiment  # noqa: F401
     import configs.base.experiment.posttrain_video.t2w_sft_8b_local_datapacker  # noqa: F401
     return c

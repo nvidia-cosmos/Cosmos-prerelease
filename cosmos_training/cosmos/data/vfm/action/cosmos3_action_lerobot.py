@@ -89,17 +89,17 @@ from cosmos.data.vfm.action.action_spec import (  # noqa: F401  (re-export)
 from cosmos.data.vfm.action.domain_utils import get_domain_id
 from cosmos.data.vfm.action.pose_utils import compute_idle_frames
 from cosmos.data.vfm.action.viewpoint_utils import Viewpoint
-from projects.cosmos3.vfm.scripts.action.memprofile import (
+from cosmos.data.vfm.action.memprofile import (
     deep_size as _deep_size,
 )
-from projects.cosmos3.vfm.scripts.action.memprofile import (
+from cosmos.data.vfm.action.memprofile import (
     fmt_mb as _fmt_mb,
 )
-from projects.cosmos3.vfm.scripts.action.memprofile import (
+from cosmos.data.vfm.action.memprofile import (
     log_worker_memory_breakdown,
     rss_tracker,
 )
-from projects.cosmos3.vfm.scripts.action.memprofile import (
+from cosmos.data.vfm.action.memprofile import (
     memprofile_enabled as _memprofile_enabled,
 )
 
